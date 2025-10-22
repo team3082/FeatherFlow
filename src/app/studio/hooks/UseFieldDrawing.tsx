@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, RefObject, useCallback, use } from 'react';
 import { useStudioStore } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
-import { inchToCanvas, Vector2 } from '@/types';
+import { AnchorPoint, ControlPoint, inchToCanvas, Vector2 } from '@/types';
 
 // Drawing functions
 const setupTransform = (ctx: CanvasRenderingContext2D, viewport: any) => {
@@ -19,7 +19,7 @@ const drawField = (ctx: CanvasRenderingContext2D, image: HTMLImageElement | null
   }
 };
 
-const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: any[]) => {
+const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[]) => {
   if (anchorPoints.length < 2) return;
 
   ctx.beginPath();
@@ -52,7 +52,7 @@ const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: any[]) => {
   ctx.globalAlpha = 1;
 };
 
-const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: any[], selectedPoint: any, getPointAtT: (t: number) => Vector2) => {
+const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint[], selectedPoint: any, getPointAtT: (t: number) => Vector2) => {
   controlPoints.forEach(point => {
     const posInches = getPointAtT(point.u);
 
