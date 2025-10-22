@@ -1,3 +1,5 @@
+"use client";
+
 import { Field } from '@/app/studio/components/Field';
 import Header from '@/components/layout/Header';
 import Footer from '../studio/components/Footer';

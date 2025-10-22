@@ -44,7 +44,6 @@ export function Field() {
   
   // Wheel event for zooming
   const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
 

@@ -40,7 +40,7 @@ export default function ControlPointProperties() {
         <input
           type="number"
           step="0.01"
-          value={point.u.toFixed(2)}
+          value={point.u.toFixed(3)}
           onChange={(e) => updateControlPoint(point.id, { u: parseFloat(e.target.value || '0') })}
           className="w-full px-2 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-blue-500"
         />

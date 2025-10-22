@@ -22,7 +22,7 @@ export default function RootLayout({
       <Suspense>
         <body
           className={` ${spaceGrotesk.variable} antialiased`}
-          onContextMenu={(e) => e.preventDefault()}
+          // onContextMenu={(e) => e.preventDefault()}
         >
           {children}
         </body>
@@ -30,3 +30,4 @@ export default function RootLayout({
     </html>
   );
 }
+

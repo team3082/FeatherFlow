@@ -31,12 +31,17 @@ const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: any[]) => {
   for (let i = 1; i < anchorPoints.length; i++) {
     const prev = anchorPoints[i - 1];
     const curr = anchorPoints[i];
-    // Convert control points and anchors from inches to canvas
-    const cp1 = inchToCanvas(prev.position.x + prev.handleOutOffset.x, prev.position.y + prev.handleOutOffset.y);
-    const cp2 = inchToCanvas(curr.position.x + curr.handleInOffset.x, curr.position.y + curr.handleInOffset.y);
     const end = inchToCanvas(curr.position.x, curr.position.y);
 
-    ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, end.x, end.y);
+    if (curr.isCurved) {
+      // Draw Bezier curve
+      const cp1 = inchToCanvas(prev.position.x + prev.handleOutOffset.x, prev.position.y + prev.handleOutOffset.y);
+      const cp2 = inchToCanvas(curr.position.x + curr.handleInOffset.x, curr.position.y + curr.handleInOffset.y);
+      ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, end.x, end.y);
+    } else {
+      // Draw straight line
+      ctx.lineTo(end.x, end.y);
+    }
   }
 
   ctx.strokeStyle = '#3B82F6';
@@ -165,40 +170,52 @@ export const PathPreviewCanvas: React.FC<PathPreviewCanvasProps> = ({ routine, o
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    try {
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Calculate scale to fit field in canvas while maintaining aspect ratio
-    const scaleX = canvas.width / FIELD_CONFIG.width;
-    const scaleY = canvas.height / FIELD_CONFIG.height;
-    const scale = Math.min(scaleX, scaleY);
+      // Calculate scale to fit field in canvas while maintaining aspect ratio
+      const scaleX = canvas.width / FIELD_CONFIG.width;
+      const scaleY = canvas.height / FIELD_CONFIG.height;
+      const scale = Math.min(scaleX, scaleY);
 
-    // Center the field in the canvas
-    const offsetX = (canvas.width - FIELD_CONFIG.width * scale) / 2;
-    const offsetY = (canvas.height - FIELD_CONFIG.height * scale) / 2;
+      // Center the field in the canvas
+      const offsetX = (canvas.width - FIELD_CONFIG.width * scale) / 2;
+      const offsetY = (canvas.height - FIELD_CONFIG.height * scale) / 2;
 
-    const viewport = {
-      offsetX,
-      offsetY,
-      scale
-    };
+      const viewport = {
+        offsetX,
+        offsetY,
+        scale
+      };
 
-    setupTransform(ctx, viewport);
+      setupTransform(ctx, viewport);
 
-    // Draw field
-    drawField(ctx, fieldImageRef.current, FIELD_CONFIG);
+      // Draw field
+      drawField(ctx, fieldImageRef.current, FIELD_CONFIG);
 
-    // Draw paths
-    drawPaths(ctx, routine.anchorPoints);
+      // Draw paths
+      drawPaths(ctx, routine.anchorPoints);
 
-    // Draw anchors
-    drawAnchors(ctx, routine.anchorPoints);
+      // Draw anchors
+      drawAnchors(ctx, routine.anchorPoints);
 
-    // Draw control points
-    drawControlPoints(ctx, routine.controlPoints, (t) => getPointAtT(routine.anchorPoints, t));
+      // Draw control points
+      drawControlPoints(ctx, routine.controlPoints, (t) => getPointAtT(routine.anchorPoints, t));
 
-    // Restore
-    ctx.restore();
+      // Restore
+      ctx.restore();
+    } catch (error) {
+      console.error('Error drawing path preview:', error);
+      // Fallback: just draw a simple placeholder
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '20px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Preview Error', canvas.width / 2, canvas.height / 2);
+    }
   }, [routine, imageLoaded]);
 
   return (

@@ -28,7 +28,6 @@ export default function ControlPointsList() {
 					const borderColor = isSelected ? colors.border : 'border-gray-700 hover:border-gray-600';
 					const attributeBorderColor = isSelected ? colors.border : 'border-gray-600';
 					
-					console.log(colors.border);
 					return (
 						<div
 							key={index}
