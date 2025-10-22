@@ -48,7 +48,7 @@ FeatherFlow Architecture
 └── 🧮 Core Mathematics
     ├── Bezier Curve Engine
     ├── Coordinate Conversion
-    └── Path Interpolation
+    └── Path Optmization (In Rust)
 ```
 
 ### Core Components
