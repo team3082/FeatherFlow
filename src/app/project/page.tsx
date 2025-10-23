@@ -2,7 +2,7 @@
 
 import Header from '@/components/layout/Header';
 import AmbientDots from '@/components/AmbientDots';
-import React, { useState, Suspense } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { useProjectStore } from '@/store/ProjectStore';
@@ -15,7 +15,7 @@ export default function ProjectPage() {
   const searchParams = useSearchParams();
   const fromLanding = searchParams.get('from') === 'landing';
 
-  const { routines, createRoutine, duplicateRoutine, deleteRoutine, renameRoutine } = useProjectStore();
+  const { routines, duplicateRoutine, deleteRoutine, renameRoutine } = useProjectStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<'name' | 'description' | null>(null);
@@ -26,7 +26,7 @@ export default function ProjectPage() {
     router.push('/studio');
   };
 
-  const handleEditAuto = (routineId: string) => {
+  const handleEditAuto = () => {
     // TODO: Load the routine data into the studio
     router.push('/studio');
   };
@@ -96,7 +96,6 @@ export default function ProjectPage() {
                 <RoutineCard
                   key={routine.id}
                   routine={routine}
-                  index={index}
                   onEdit={handleEditAuto}
                   onDuplicate={handleDuplicateAuto}
                   onDelete={handleOpenDeleteConfirm}
@@ -107,7 +106,7 @@ export default function ProjectPage() {
                   onSaveEdit={handleSaveEdit}
                   onCancelEdit={handleCancelEdit}
                   onEditValueChange={function (value: string): void {
-                    throw new Error('Function not implemented.');
+                    setEditValue(value);
                   }}              />
               ))}
 

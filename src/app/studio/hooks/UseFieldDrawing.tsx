@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, RefObject, useCallback, use } from 'react';
-import { useStudioStore } from '@/store/StudioStore';
+import { useEffect, useRef, useState, RefObject, useCallback } from 'react';
+import { SelectedPoint, useStudioStore, Viewport } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
 import { AnchorPoint, ControlPoint, inchToCanvas, Vector2 } from '@/types';
 
 // Drawing functions
-const setupTransform = (ctx: CanvasRenderingContext2D, viewport: any) => {
+const setupTransform = (ctx: CanvasRenderingContext2D, viewport: Viewport) => {
   ctx.save();
   ctx.translate(viewport.offsetX, viewport.offsetY);
   ctx.scale(viewport.scale, viewport.scale);
@@ -52,7 +52,7 @@ const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[]) =
   ctx.globalAlpha = 1;
 };
 
-const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint[], selectedPoint: any, getPointAtT: (t: number) => Vector2) => {
+const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint[], selectedPoint: SelectedPoint | null, getPointAtT: (t: number) => Vector2) => {
   controlPoints.forEach(point => {
     const posInches = getPointAtT(point.u);
 
@@ -89,7 +89,7 @@ const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: Control
   });
 };
 
-const drawAnchors = (ctx: CanvasRenderingContext2D, anchorPoints: any[], selectedPoint: any) => {
+const drawAnchors = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[], selectedPoint: SelectedPoint | null) => {
   // Color constants
   const HANDLE_LINE_COLOR = '#374151';
   const ANCHOR_COLOR = '#3B82F6';

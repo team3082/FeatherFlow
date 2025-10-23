@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-namespace */
 import { Vector2 } from "./Vector2";
 
 /**

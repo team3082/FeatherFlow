@@ -2,7 +2,6 @@
 
 import AmbientDots from "@/components/AmbientDots";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
 
 export default function Home() {
   const router = useRouter();

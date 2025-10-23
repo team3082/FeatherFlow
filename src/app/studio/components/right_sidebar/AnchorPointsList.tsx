@@ -1,7 +1,7 @@
 "use client";
 
 import { useStudioStore } from "@/store/StudioStore";
-import { Trash, X } from "lucide-react";
+import { Trash } from "lucide-react";
 
 export default function AnchorPointsList() {
 	const anchorPoints = useStudioStore(state => state.anchorPoints);

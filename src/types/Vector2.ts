@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-namespace */
+
 /**
  * Represent a 2D vector; oftentimes used for 2D point representation in space.
  * Contains useful methods for vector manipulation.
