@@ -2,7 +2,7 @@
 
 import { colorMap } from "@/config/config";
 import { useStudioStore } from "@/store/StudioStore";
-import { Trash, X } from "lucide-react";
+import { Trash } from "lucide-react";
 
 export default function ControlPointsList() {
 	const controlPoints = useStudioStore(state => state.controlPoints);
@@ -19,7 +19,6 @@ export default function ControlPointsList() {
 			<div className="flex flex-col gap-1.5">
 				{controlPoints.sort((a, b) => a.u - b.u).map((point, index) => {
 					const isSelected = selectedPoint?.type === 'control' && selectedPoint?.id === point.id;
-					const pos = { x: 0, y: 0 };
 
 					const customColor = point.color;
 				

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useStudioStore } from "@/store/StudioStore";
-import { Trash, X } from "lucide-react";
+import { Trash } from "lucide-react";
 
 export default function ControlPointProperties() {
   const selectedPoint = useStudioStore(state => state.selectedPoint);
@@ -50,7 +50,7 @@ export default function ControlPointProperties() {
         <label className="block text-xs text-gray-300 font-medium mb-1.5">Color</label>
         <select
           value={point.color || 'purple'}
-          onChange={(e) => updateControlPoint(point.id, { color: e.target.value as any })}
+          onChange={(e) => updateControlPoint(point.id, { color: e.target.value as 'purple' | 'red' | 'green' | 'blue' })}
           className="w-full px-2 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-blue-500"
         >
           <option value="purple">Purple</option>
@@ -100,7 +100,7 @@ export default function ControlPointProperties() {
                   className="text-blue-500 hover:text-blue-400 text-sm px-1"
                   title="Remove attribute"
                 >
-                  <X className='w-3 h-3'/>
+                  <Trash className='w-3 h-3'/>
                 </button>
               </label>
               <input

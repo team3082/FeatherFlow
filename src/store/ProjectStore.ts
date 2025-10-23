@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AutoRoutine, AnchorPoint, ControlPoint } from '@/types';
+import { AutoRoutine } from '@/types';
 
 
 export interface ProjectState {

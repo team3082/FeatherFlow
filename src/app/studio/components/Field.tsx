@@ -3,7 +3,6 @@
 import React, { useRef, useEffect } from 'react';
 import { HomeIcon } from 'lucide-react';
 import { useStudioStore } from '@/store/StudioStore';
-import { canvasToInch } from '@/types';
 import { FIELD_CONFIG } from '@/config/config';
 import { useFieldDrawing } from '../hooks/UseFieldDrawing';
 import { useFieldInteraction } from '../hooks/UseFieldInteraction';
@@ -12,7 +11,6 @@ export function Field() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const viewport = useStudioStore(state => state.viewport);
   const zoom = useStudioStore(state => state.zoom);
   const resetView = useStudioStore(state => state.resetView);
   const isDragging = useStudioStore(state => state.isDragging);

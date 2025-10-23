@@ -29,7 +29,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
             </div>
             <h3 className="text-xl font-bold text-gray-100 mb-2">Delete Auto</h3>
             <p className="text-gray-300 mb-6 leading-relaxed">
-              Are you sure you want to delete <span className="font-semibold text-blue-400">"{routine.name}"</span>?
+              Are you sure you want to delete <span className="font-semibold text-blue-400">{routine.name}</span>?
             </p>
             <p className="text-sm text-gray-400">This action cannot be undone.</p>
           </div>

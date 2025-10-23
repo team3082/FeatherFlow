@@ -1,8 +1,7 @@
 "use client";
-
-import type { Metadata } from "next";
-import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+
+import { Space_Grotesk } from "next/font/google";
 import { Suspense } from "react";
 
 
