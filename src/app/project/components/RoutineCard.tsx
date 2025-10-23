@@ -3,11 +3,10 @@
 import React, { useState } from 'react';
 import { AutoRoutine } from '@/types';
 import { PathPreviewCanvas } from './PathPreviewCanvas';
-import { Ellipsis, Settings } from 'lucide-react';
+import { Ellipsis } from 'lucide-react';
 
 interface RoutineCardProps {
   routine: AutoRoutine;
-  index: number;
   onEdit: (routineId: string) => void;
   onDuplicate: (routineId: string) => void;
   onDelete: (routineId: string) => void;
@@ -22,7 +21,6 @@ interface RoutineCardProps {
 
 export const RoutineCard: React.FC<RoutineCardProps> = ({
   routine,
-  index,
   onEdit,
   onDuplicate,
   onDelete,
@@ -34,7 +32,6 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
   onCancelEdit,
   onEditValueChange
 }) => {
-  const [hoveredCard, setHoveredCard] = useState<number | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const handleEditAuto = (e: React.MouseEvent) => {
@@ -44,8 +41,6 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
 
   return (
     <div
-      onMouseEnter={() => setHoveredCard(index)}
-      onMouseLeave={() => setHoveredCard(null)}
       className="bg-gray-900/20 backdrop-blur border border-gray-800/30 rounded-2xl overflow-hidden hover:border-blue-500/30 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 group hover:-translate-y-1"
     >
       {/* Preview Canvas */}
@@ -67,7 +62,6 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
                   if (e.key === 'Enter') onSaveEdit();
                   if (e.key === 'Escape') onCancelEdit();
                 }}
-                autoFocus
                 className="w-full text-lg font-bold text-gray-100 bg-gray-800 border border-blue-500 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             ) : (
@@ -82,10 +76,9 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
                 onChange={(e) => onEditValueChange(e.target.value)}
                 onBlur={onSaveEdit}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e as any).metaKey) onSaveEdit();
+                  if (e.key === 'Enter' && e.metaKey) onSaveEdit();
                   if (e.key === 'Escape') onCancelEdit();
                 }}
-                autoFocus
                 rows={2}
                 className="w-full text-sm text-gray-300 bg-gray-800 border border-blue-500 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
