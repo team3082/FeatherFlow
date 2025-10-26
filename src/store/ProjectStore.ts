@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import { AutoRoutine, AnchorPoint, ControlPoint } from '@/types';
+import { useStudioStore } from './StudioStore';
+import { create as createFile, BaseDirectory, writeTextFile } from '@tauri-apps/plugin-fs';
+
 
 
 export interface ProjectState {
@@ -7,7 +10,7 @@ export interface ProjectState {
   isProjectLoaded: boolean;
 
   routines: AutoRoutine[];
-  currentRoutineIndex: number | null;
+  currentRoutineId: string | null;
 
   // Project Management
   loadProject: (projectPath: string) => Promise<void>;
@@ -22,8 +25,9 @@ export interface ProjectState {
   getRoutine: (routineId: string) => AutoRoutine | undefined;
 
   // Current Routine Selection
-  setCurrentRoutine: (routineIndex: number) => void;
+  setCurrentRoutine: (routineId: string | null) => void;
   getCurrentRoutine: () => AutoRoutine | null;
+  getCurrentRoutineName: () => string | null;
 
   // Studio Integration
   loadRoutineToStudio: (routineId: string) => void;
@@ -102,7 +106,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   projectPath: null,
   isProjectLoaded: false,
   routines: createDummyRoutines(),
-  currentRoutineIndex: null,
+  currentRoutineId: null,
 
   // Project Management
   loadProject: async (projectPath: string) => {
@@ -111,7 +115,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   unloadProject: () => {
-    set({ projectPath: null, isProjectLoaded: false, routines: [], currentRoutineIndex: null });
+    set({ projectPath: null, isProjectLoaded: false, routines: [], currentRoutineId: null });
+  },
+
+  getCurrentRoutineName: () => {
+    const state = get();
+    const currentRoutine = state.currentRoutineId ? state.routines.find(r => r.id === state.currentRoutineId) : null;
+    return currentRoutine ? currentRoutine.name : null;
   },
 
   getProjectInfo: () => {
@@ -153,13 +163,17 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     return duplicate;
   },
 
-  deleteRoutine: (routineId: string) => {
+  deleteRoutine: async (routineId: string) => {
+
+    const file = await createFile('test.txt', { baseDir: BaseDirectory.Desktop });
+    await file.write(new TextEncoder().encode('Hello world'));
+    await file.close();
+
     set(state => ({
       routines: state.routines.filter(r => r.id !== routineId),
-      currentRoutineIndex: state.currentRoutineIndex !== null &&
-        state.routines[state.currentRoutineIndex]?.id === routineId
-        ? null : state.currentRoutineIndex
+      currentRoutineId: state.currentRoutineId === routineId ? null : state.currentRoutineId
     }));
+
   },
 
   renameRoutine: (routineId: string, newName: string) => {
@@ -177,19 +191,27 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   // Current Routine Selection
-  setCurrentRoutine: (routineIndex: number) => {
-    set({ currentRoutineIndex: routineIndex });
+  setCurrentRoutine: (routineId: string | null) => {
+    set({ currentRoutineId: routineId });
   },
 
   getCurrentRoutine: () => {
     const state = get();
-    return state.currentRoutineIndex !== null ? state.routines[state.currentRoutineIndex] || null : null;
+    return state.currentRoutineId ? state.routines.find(r => r.id === state.currentRoutineId) || null : null;
   },
 
   // Studio Integration
   loadRoutineToStudio: (routineId: string) => {
-    // TODO: Load routine data into studio store
-    console.log('Loading routine to studio:', routineId);
+    const routine = get().routines.find(r => r.id === routineId);
+    if (!routine) return;
+
+    const studioStore = useStudioStore.getState();
+    studioStore.setAnchorPoints(routine.anchorPoints);
+    studioStore.setControlPoints(routine.controlPoints);
+    studioStore.setSelectedPoint(null);
+    
+    // Set this as the current routine
+    set({ currentRoutineId: routineId });
   },
 
   syncFromStudio: () => {

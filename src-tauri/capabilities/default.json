@@ -6,6 +6,17 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "fs:default",
+    "fs:read-files",
+    "fs:write-files", 
+    "fs:allow-mkdir",
+    "fs:allow-read-file",
+    "fs:allow-write-file", 
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",  
+    "fs:scope-home",
+    "fs:scope-desktop",
+    "fs:scope-appdata"
   ]
 }

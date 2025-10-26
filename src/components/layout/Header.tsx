@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
+import { useProjectStore } from '@/store/ProjectStore';
 
 interface HeaderProps {
     className?: string;
@@ -10,6 +11,7 @@ interface HeaderProps {
 
     export default function Header({ className }: HeaderProps) {
     const pathname = usePathname();
+    const currentRoutineName = useProjectStore(state => state.getCurrentRoutineName());
 
     return (
         <header className={`relative z-10 flex items-center justify-between px-6 py-3 h-15 bg-gray-800 ${className}`}>
@@ -28,7 +30,12 @@ interface HeaderProps {
                     Project
                     </Link>
                     <ChevronRight className="w-4 h-4 text-gray-400" />
-                    <span className="text-white font-medium">3-Piece Auto</span>
+                    <span className="text-white font-medium">
+                        {currentRoutineName || 'Untitled Routine'}
+                    </span>
+                    <Link href="/command">
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                    </Link>
                 </>
                 )}
             </div>

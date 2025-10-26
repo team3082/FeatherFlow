@@ -66,6 +66,10 @@ export interface StudioState {
   stopPanning: () => void;
 	zoom: (delta: number, center: Vector2) => void;
   resetView: (fieldDimensions: { width: number; height: number }, containerSize: { width: number; height: number }) => void;
+
+  // Load/Save Actions
+  setAnchorPoints: (points: AnchorPoint[]) => void;
+  setControlPoints: (points: ControlPoint[]) => void;
   
   // Derived State
   getCurveSegments: () => BezierCurve[];
@@ -353,5 +357,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
           : cp
       )
     }));
-  }
+  },
+
+  // Load/Save Actions
+  setAnchorPoints: (points) => set({ anchorPoints: points }),
+  setControlPoints: (points) => set({ controlPoints: points })
 }));
