@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, RefObject, useCallback, use } from 'react';
-import { useStudioStore } from '@/store/StudioStore';
+import { useStudioStore, Viewport } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
 import { AnchorPoint, ControlPoint, inchToCanvas, Vector2 } from '@/types';
 
 // Drawing functions
-const setupTransform = (ctx: CanvasRenderingContext2D, viewport: any) => {
+const setupTransform = (ctx: CanvasRenderingContext2D, viewport: Viewport) => {
   ctx.save();
   ctx.translate(viewport.offsetX, viewport.offsetY);
   ctx.scale(viewport.scale, viewport.scale);

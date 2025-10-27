@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { AnchorPoint } from '@/types/AnchorPoint';
 import { BezierCurve } from '@/types/BezierCurve';
 import { Vector2 } from '@/types/Vector2';
-import { ControlPoint } from '@/types/ControlPoint';
+import { ControlPoint, ControlPointAttribute } from '@/types/ControlPoint';
 
 type ActiveToolType = 'anchorTool' | 'controlTool';
 
@@ -48,7 +48,7 @@ export interface StudioState {
   moveControlPoint: (id: number, newT: number) => void;
   
   // Attribute Actions
-  addAttribute: (pointId: number, attribute: any) => void;
+  addAttribute: (pointId: number, attribute: ControlPointAttribute) => void;
   updateAttribute: (pointId: number, attrIndex: number, updates: any) => void;
   removeAttribute: (pointId: number, attrIndex: number) => void;
   
@@ -79,15 +79,8 @@ export interface StudioState {
 
 export const useStudioStore = create<StudioState>((set, get) => ({
   // Initial state
-  anchorPoints: [
-    { position: { x: 325.68, y: 241.64 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: 'Start' },
-    { position: { x: 365.20, y: 241.64 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: '' },
-    { position: { x: 455.15, y: 317.15 }, handleOutOffset: { x: 54, y: 0 }, handleInOffset: { x: -54, y: 0 }, isCurved: true, handlesAligned: false, name: 'End' }
-  ],
-  controlPoints: [
-    { id: 1, u: 0.3, name: '', attributes: [{ type: 'rotate', heading: 180 }], color: 'purple' },
-    { id: 2, u: 0.65, name: '', attributes: [{ type: 'stop', duration: 1.5 }], color: 'red' }
-  ],
+  anchorPoints: [],
+  controlPoints: [],
   selectedPoint: null,
   activeTool: 'anchorTool',
   viewport: { scale: 1, offsetX: 0, offsetY: 0 },

@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from 'react';
-import { AutoRoutine } from '@/types';
+import { AnchorPoint, AutoRoutine, ControlPoint } from '@/types';
 import { FIELD_CONFIG } from '@/config/config';
 import { inchToCanvas, Vector2 } from '@/types';
+import { Viewport } from '@/store/StudioStore';
 
 // Drawing functions adapted from UseFieldDrawing.tsx
-const setupTransform = (ctx: CanvasRenderingContext2D, viewport: any) => {
+const setupTransform = (ctx: CanvasRenderingContext2D, viewport: Viewport) => {
   ctx.save();
   ctx.translate(viewport.offsetX, viewport.offsetY);
   ctx.scale(viewport.scale, viewport.scale);
@@ -21,7 +22,7 @@ const drawField = (ctx: CanvasRenderingContext2D, image: HTMLImageElement | null
   }
 };
 
-const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: any[]) => {
+const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[]) => {
   if (anchorPoints.length < 2) return;
 
   ctx.beginPath();
@@ -58,7 +59,7 @@ const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: any[]) => {
   ctx.globalAlpha = 1;
 };
 
-const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: any[], getPointAtT: (t: number) => Vector2) => {
+const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint[], getPointAtT: (t: number) => Vector2) => {
   controlPoints.forEach(point => {
     const posInches = getPointAtT(point.u);
 
@@ -94,7 +95,7 @@ const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: any[], 
   });
 };
 
-const drawAnchors = (ctx: CanvasRenderingContext2D, anchorPoints: any[]) => {
+const drawAnchors = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[]) => {
   // Color constants
   const ANCHOR_COLOR = '#3B82F6';
 
@@ -124,7 +125,7 @@ const evaluateBezierAtT = (p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t
   };
 };
 
-const getPointAtT = (anchorPoints: any[], t: number): Vector2 => {
+const getPointAtT = (anchorPoints: AnchorPoint[], t: number): Vector2 => {
   if (anchorPoints.length < 2) return { x: 0, y: 0 };
 
   const segmentIndex = Math.min(Math.floor(t * (anchorPoints.length - 1)), anchorPoints.length - 2);

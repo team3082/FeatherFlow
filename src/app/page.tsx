@@ -1,14 +1,18 @@
 'use client';
 
 import AmbientDots from "@/components/AmbientDots";
+import { useProjectStore } from "@/store/ProjectStore";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 export default function Home() {
   const router = useRouter();
+  const { selectProjectFolder } = useProjectStore();
 
-  const handleLoadProject = () => {
-    console.log("IM LAZY AND DONT WANT TO IMPLEMENT THIS NOW");
+
+  const handleLoadProject = async () => {
+    await selectProjectFolder();
+    router.push('/project?from=landing');
   };
 
   const handleLoadLast = () => {

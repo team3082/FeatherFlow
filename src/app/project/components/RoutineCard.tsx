@@ -34,7 +34,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
   onCancelEdit,
   onEditValueChange
 }) => {
-  const [hoveredCard, setHoveredCard] = useState<number | null>(null);
+  const [_, setHoveredCard] = useState<number | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const handleEditAuto = (e: React.MouseEvent) => {
@@ -62,7 +62,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
                 type="text"
                 value={editValue}
                 onChange={(e) => onEditValueChange(e.target.value)}
-                onBlur={onSaveEdit}
+                onBlur={onCancelEdit}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') onSaveEdit();
                   if (e.key === 'Escape') onCancelEdit();
@@ -80,9 +80,12 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
               <textarea
                 value={editValue}
                 onChange={(e) => onEditValueChange(e.target.value)}
-                onBlur={onSaveEdit}
+                onBlur={onCancelEdit}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e as any).metaKey) onSaveEdit();
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    onSaveEdit();
+                  }
                   if (e.key === 'Escape') onCancelEdit();
                 }}
                 autoFocus

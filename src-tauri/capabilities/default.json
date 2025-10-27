@@ -8,15 +8,19 @@
   "permissions": [
     "core:default",
     "fs:default",
-    "fs:read-files",
-    "fs:write-files", 
-    "fs:allow-mkdir",
+    "fs:allow-read-dir",
     "fs:allow-read-file",
-    "fs:allow-write-file", 
+    "fs:allow-write-file",
     "fs:allow-read-text-file",
-    "fs:allow-write-text-file",  
-    "fs:scope-home",
-    "fs:scope-desktop",
-    "fs:scope-appdata"
+    "fs:allow-write-text-file",
+    "fs:allow-exists",
+    "fs:allow-remove",
+    "fs:allow-mkdir",
+    "fs:scope-home-recursive",
+    "fs:scope-desktop-recursive",
+    "fs:scope-document-recursive",
+    "fs:scope-appdata-recursive",
+    "dialog:default",
+    "dialog:allow-open"
   ]
 }

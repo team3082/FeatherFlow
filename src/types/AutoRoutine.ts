@@ -40,9 +40,4 @@ export interface AutoRoutine {
    * When this routine was last modified
    */
   lastModified: Date;
-
-  /**
-   * Whether the routine has unsaved changes
-   */
-  isDirty: boolean;
 }

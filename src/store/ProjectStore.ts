@@ -1,9 +1,16 @@
 import { create } from 'zustand';
 import { AutoRoutine, AnchorPoint, ControlPoint } from '@/types';
 import { useStudioStore } from './StudioStore';
-import { create as createFile, BaseDirectory, writeTextFile } from '@tauri-apps/plugin-fs';
-
-
+import { 
+  writeTextFile, 
+  readTextFile,
+  readDir,
+  exists,
+  remove,
+  mkdir
+} from '@tauri-apps/plugin-fs';
+import { open } from '@tauri-apps/plugin-dialog';
+import { appDataDir, join } from '@tauri-apps/plugin-path';
 
 export interface ProjectState {
   projectPath: string | null;
@@ -13,16 +20,20 @@ export interface ProjectState {
   currentRoutineId: string | null;
 
   // Project Management
+  selectProjectFolder: () => Promise<void>;
   loadProject: (projectPath: string) => Promise<void>;
   unloadProject: () => void;
   getProjectInfo: () => { path: string; routineCount: number } | null;
 
   // Routine Management (Auto Paths)
-  createRoutine: (name: string) => AutoRoutine;
-  duplicateRoutine: (routineId: string) => AutoRoutine;
-  deleteRoutine: (routineId: string) => void;
-  renameRoutine: (routineId: string, newName: string) => void;
+  createRoutine: (name: string) => Promise<AutoRoutine>;
+  duplicateRoutine: (routineId: string) => Promise<AutoRoutine>;
+  deleteRoutine: (routineId: string) => Promise<void>;
+  renameRoutine: (routineId: string, newName: string) => Promise<void>;
+  updateDescription: (routineId: string, description: string) => Promise<void>;
   getRoutine: (routineId: string) => AutoRoutine | undefined;
+  isNameAvailable: (name: string, excludeId?: string) => boolean;
+  getUniqueName: (baseName: string) => string;
 
   // Current Routine Selection
   setCurrentRoutine: (routineId: string | null) => void;
@@ -32,86 +43,78 @@ export interface ProjectState {
   // Studio Integration
   loadRoutineToStudio: (routineId: string) => void;
   syncFromStudio: () => void;
-  saveCurrentToProject: () => void;
+  saveCurrentToProject: () => Promise<void>;
 
   // Project Persistence
+  saveRoutineToFile: (routine: AutoRoutine) => Promise<void>;
   saveProject: () => Promise<void>;
   exportProject: (exportPath: string) => Promise<void>;
 }
-
-// Dummy data for development, is this bad practice, kinda...
-const createDummyRoutines = (): AutoRoutine[] => [
-  {
-    id: '1',
-    name: "4-Piece Auto",
-    description: "Scores 4 pieces",
-    anchorPoints: [
-      { position: { x: 366.13828550008844, y: 240.93461530073677 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: "Start" },
-      { position: { x: 493.5433739495908, y: 194.54501650342553 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: "" },
-      { position: { x: 564.5950689188593, y: 245.7681328913397 }, handleInOffset: { x: -38.70994649565053, y: -23.560957160250084 }, handleOutOffset: { x: 46.00624093102715, y: 28.00187470685003 }, isCurved: true, handlesAligned: true, name: "" },
-      { position: { x: 644.0924430946956, y: 280.63839196024725 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: false, name: "End" },
-      { position: { x: 536.2774802375741, y: 194.54501650342553 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: "" }
-    ],
-    controlPoints: [
-      { id: 3, u: 0.5, name: '', attributes: [{ type: 'command', action: 'intake' }], color: 'purple' },
-      { id: 4, u: 1, name: '', attributes: [{ type: 'stop', duration: 2.0 }], color: 'red' },
-      { id: 7, u: 3, name: '', attributes: [{ type: 'stop', duration: 2.0 }], color: 'purple' },
-      { id: 5, u: 5, name: '', attributes: [{ type: 'stop', duration: 2.0 }], color: 'green' }
-    ],
-    created: new Date('2025-10-15'),
-    lastModified: new Date('2025-10-15'),
-    isDirty: false
-  },
-  {
-    id: '2',
-    name: "3-Piece Auto",
-    description: "Quick 3 piece",
-    anchorPoints: [
-      { position: { x: 366.13828550008844, y: 240.93461530073677 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: "Start" },
-      { position: { x: 493.5433739495908, y: 194.54501650342553 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: "" },
-      { position: { x: 564.5950689188593, y: 245.7681328913397 }, handleInOffset: { x: -38.70994649565053, y: -23.560957160250084 }, handleOutOffset: { x: 46.00624093102715, y: 28.00187470685003 }, isCurved: true, handlesAligned: true, name: "" },
-      { position: { x: 644.0924430946956, y: 280.63839196024725 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: false, name: "End" },
-      { position: { x: 536.2774802375741, y: 194.54501650342553 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: "" }
-    ],
-    controlPoints: [
-      { id: 3, u: 0.5, name: '', attributes: [{ type: 'command', action: 'intake' }], color: 'red' },
-      { id: 4, u: 1, name: '', attributes: [{ type: 'stop', duration: 2.0 }], color: 'purple' },
-      { id: 7, u: 3, name: '', attributes: [{ type: 'stop', duration: 2.0 }], color: 'green' },
-      { id: 5, u: 5, name: '', attributes: [{ type: 'stop', duration: 2.0 }], color: 'red' }
-    ],
-    created: new Date('2025-10-14'),
-    lastModified: new Date('2025-10-14'),
-    isDirty: false
-  },
-  {
-    id: '3',
-    name: "One Piece",
-    description: "Scores One Piece",
-    anchorPoints: [
-      { position: { x: 366.13828550008844, y: 240.93461530073677 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: "Start" },
-      { position: { x: 493.5433739495908, y: 194.54501650342553 }, handleOutOffset: { x: 0, y: 0 }, handleInOffset: { x: 0, y: 0 }, isCurved: false, handlesAligned: true, name: "" },
-    ],
-    controlPoints: [
-      { id: 3, u: 0.5, name: '', attributes: [{ type: 'command', action: 'intake' }], color: 'red' },
-      { id: 4, u: 1, name: '', attributes: [{ type: 'stop', duration: 2.0 }], color: 'purple' },
-    ],
-    created: new Date('2025-10-13'),
-    lastModified: new Date('2025-10-13'),
-    isDirty: false
-  }
-];
 
 export const useProjectStore = create<ProjectState>()((set, get) => ({
   // Initial state
   projectPath: null,
   isProjectLoaded: false,
-  routines: createDummyRoutines(),
+  routines: [],
   currentRoutineId: null,
 
   // Project Management
+  selectProjectFolder: async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select Project Folder'
+      });
+
+      if (selected && typeof selected === 'string') {
+        await get().loadProject(selected);
+      }
+    } catch (error) {
+      console.error('Failed to select folder:', error);
+    }
+  },
+
   loadProject: async (projectPath: string) => {
-    set({ projectPath, isProjectLoaded: true });
-    // TODO: Load actual project data
+
+    try {
+      const routinesPath = `${projectPath}/src/main/deploy/FeatherFlow`;
+      
+      // Check if routines folder exists, create if not
+      const routinesFolderExists = await exists(routinesPath);
+      if (!routinesFolderExists) {
+        await mkdir(routinesPath, { recursive: true });
+      }
+
+      // Read all JSON files from the routines folder
+      const entries = await readDir(routinesPath);
+      const loadedRoutines: AutoRoutine[] = [];
+
+      for (const entry of entries) {
+        if (entry.name?.endsWith('.json')) {
+          const filePath = `${routinesPath}/${entry.name}`;
+          const content = await readTextFile(filePath);
+          const routine = JSON.parse(content) as AutoRoutine;
+          
+          // Convert date strings back to Date objects
+          routine.created = new Date(routine.created);
+          routine.lastModified = new Date(routine.lastModified);
+          
+          loadedRoutines.push(routine);
+        }
+      }
+
+      set({ 
+        projectPath, 
+        isProjectLoaded: true, 
+        routines: loadedRoutines
+      });
+      
+      console.log(`Loaded ${loadedRoutines.length} routines from ${projectPath}`);
+    } catch (error) {
+      console.error('Failed to load project:', error);
+      set({ projectPath, isProjectLoaded: true, routines: [] });
+    }
   },
 
   unloadProject: () => {
@@ -131,63 +134,215 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   // Routine Management
-  createRoutine: (name: string) => {
+  createRoutine: async (name: string) => {
+    const state = get();
+    const uniqueName = get().getUniqueName(name);
+    
+    
     const newRoutine: AutoRoutine = {
       id: Date.now().toString(),
-      name,
-      anchorPoints: [],
-      controlPoints: [],
+      name: uniqueName,
+      anchorPoints: [
+        {
+          "position": {
+            "x": 391.94776240091824,
+            "y": 241.1387862879399
+          },
+          "handleOutOffset": {
+            "x": 20,
+            "y": 0
+          },
+          "handleInOffset": {
+            "x": -20,
+            "y": 0
+          },
+          "isCurved": true,
+          "handlesAligned": true,
+          "name": ""
+        },
+        {
+          "position": {
+            "x": 490.80268935902006,
+            "y": 196.870648085471
+          },
+          "handleOutOffset": {
+            "x": 20,
+            "y": 0
+          },
+          "handleInOffset": {
+            "x": -20,
+            "y": 0
+          },
+          "isCurved": true,
+          "handlesAligned": true,
+          "name": ""
+        }
+      ],
+      controlPoints: [
+        {
+          "id": 1761525063428,
+          "u": 0.5,
+          "color": "red",
+          "attributes": [
+            {
+              "type": "stop",
+              "duration": 1
+            }
+          ],
+          "name": ""
+        }
+      ],
       created: new Date(),
-      lastModified: new Date(),
-      isDirty: true
+      lastModified: new Date()
     };
+    
     set(state => ({ routines: [...state.routines, newRoutine] }));
+    
+    // Save to file if project is loaded
+    if (state.isProjectLoaded && state.projectPath) {
+      await get().saveRoutineToFile(newRoutine);
+    }
+    
     return newRoutine;
   },
 
-  duplicateRoutine: (routineId: string) => {
+  duplicateRoutine: async (routineId: string) => {
     const state = get();
     const original = state.routines.find(r => r.id === routineId);
     if (!original) throw new Error('Routine not found');
 
+    const baseName = `${original.name} (Copy)`;
+    const uniqueName = get().getUniqueName(baseName);
+
     const duplicate: AutoRoutine = {
       ...original,
       id: Date.now().toString(),
-      name: `${original.name} (Copy)`,
+      name: uniqueName,
       created: new Date(),
-      lastModified: new Date(),
-      isDirty: true
+      lastModified: new Date()
     };
 
     set(state => ({ routines: [...state.routines, duplicate] }));
+    
+    // Save to file if project is loaded
+    if (state.isProjectLoaded && state.projectPath) {
+      await get().saveRoutineToFile(duplicate);
+    }
+    
     return duplicate;
   },
 
   deleteRoutine: async (routineId: string) => {
+    const state = get();
+    const routine = state.routines.find(r => r.id === routineId);
+    if (!routine) return;
 
-    const file = await createFile('test.txt', { baseDir: BaseDirectory.Desktop });
-    await file.write(new TextEncoder().encode('Hello world'));
-    await file.close();
+    // Delete file if project is loaded
+    if (state.isProjectLoaded && state.projectPath) {
+      try {
+        const filePath = `${state.projectPath}/src/main/deploy/FeatherFlow/${routine.name}.json`;
+        const fileExists = await exists(filePath);
+        if (fileExists) {
+          await remove(filePath);
+        }
+      } catch (error) {
+        console.error('Failed to delete routine file:', error);
+      }
+    }
 
     set(state => ({
       routines: state.routines.filter(r => r.id !== routineId),
       currentRoutineId: state.currentRoutineId === routineId ? null : state.currentRoutineId
     }));
-
   },
 
-  renameRoutine: (routineId: string, newName: string) => {
+  renameRoutine: async (routineId: string, newName: string) => {
+    const state = get();
+    const routine = state.routines.find(r => r.id === routineId);
+    if (!routine) return;
+
+    // Check if name is available
+    if (!get().isNameAvailable(newName, routineId)) {
+      throw new Error('A routine with this name already exists');
+    }
+
+    const oldName = routine.name;
+
+    // Update in state
     set(state => ({
       routines: state.routines.map(r =>
         r.id === routineId
-          ? { ...r, name: newName, lastModified: new Date(), isDirty: true }
+          ? { ...r, name: newName, lastModified: new Date() }
           : r
       )
     }));
+
+    // Rename file if project is loaded
+    if (state.isProjectLoaded && state.projectPath) {
+      try {
+        const oldPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${oldName}.json`;
+        const newPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${newName}.json`;
+        
+        const oldFileExists = await exists(oldPath);
+        if (oldFileExists) {
+          // Read, delete old, write new
+          const content = await readTextFile(oldPath);
+          const routineData = JSON.parse(content);
+          routineData.name = newName;
+          routineData.lastModified = new Date().toISOString();
+          
+          await writeTextFile(newPath, JSON.stringify(routineData, null, 2));
+          await remove(oldPath);
+        }
+      } catch (error) {
+        console.error('Failed to rename routine file:', error);
+        throw error;
+      }
+    }
   },
 
   getRoutine: (routineId: string) => {
     return get().routines.find(r => r.id === routineId);
+  },
+
+  updateDescription: async (routineId: string, description: string) => {
+    const state = get();
+    const routine = state.routines.find(r => r.id === routineId);
+    if (!routine) return;
+
+    // Update in state
+    set(state => ({
+      routines: state.routines.map(r =>
+        r.id === routineId
+          ? { ...r, description, lastModified: new Date() }
+          : r
+      )
+    }));
+
+    // Save to file if project is loaded
+    if (state.isProjectLoaded && state.projectPath) {
+      const updatedRoutine = get().routines.find(r => r.id === routineId);
+      if (updatedRoutine) {
+        await get().saveRoutineToFile(updatedRoutine);
+      }
+    }
+  },
+
+  isNameAvailable: (name: string, excludeId?: string) => {
+    const state = get();
+    return !state.routines.some(r => r.name === name && r.id !== excludeId);
+  },
+
+  getUniqueName: (baseName: string) => {
+    let name = baseName;
+    let counter = 1;
+    
+    while (!get().isNameAvailable(name)) {
+      name = `${baseName} ${counter}`;
+      counter++;
+    }
+    
+    return name;
   },
 
   // Current Routine Selection
@@ -215,19 +370,83 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   syncFromStudio: () => {
-    // TODO: Sync changes from studio back to project
-    console.log('Syncing from studio');
+    const state = get();
+    if (!state.currentRoutineId) return;
+
+    const studioStore = useStudioStore.getState();
+    const anchorPoints = studioStore.anchorPoints;
+    const controlPoints = studioStore.controlPoints;
+
+    set(state => ({
+      routines: state.routines.map(r =>
+        r.id === state.currentRoutineId
+          ? { 
+              ...r, 
+              anchorPoints, 
+              controlPoints, 
+              lastModified: new Date()
+            }
+          : r
+      )
+    }));
   },
 
-  saveCurrentToProject: () => {
-    // TODO: Save current studio state to project
-    console.log('Saving current to project');
+  saveCurrentToProject: async () => {
+    const state = get();
+    if (!state.currentRoutineId) return;
+
+    // Sync from studio first
+    get().syncFromStudio();
+
+    // Save to file
+    const routine = get().routines.find(r => r.id === state.currentRoutineId);
+    if (routine && state.isProjectLoaded && state.projectPath) {
+      await get().saveRoutineToFile(routine);
+    }
+  },
+
+  // Helper method to save a routine to file
+  saveRoutineToFile: async (routine: AutoRoutine) => {
+    const state = get();
+    if (!state.isProjectLoaded || !state.projectPath) return;
+
+    try {
+      const routinesPath = `${state.projectPath}/src/main/deploy/FeatherFlow`;
+      const filePath = `${routinesPath}/${routine.name}.json`;
+      
+      // Ensure routines folder exists
+      const folderExists = await exists(routinesPath);
+      if (!folderExists) {
+        await mkdir(routinesPath, { recursive: true });
+      }
+
+      // Write routine to file
+      await writeTextFile(filePath, JSON.stringify(routine, null, 2));
+      
+      console.log(`Saved routine: ${routine.name}`);
+      
+      // Mark as not dirty
+      set(state => ({
+        routines: state.routines.map(r =>
+          r.id === routine.id ? { ...r } : r
+        )
+      }));
+    } catch (error) {
+      console.error('Failed to save routine to file:', error);
+    }
   },
 
   // Project Persistence
   saveProject: async () => {
-    // TODO: Save project to file system
-    console.log('Saving project');
+    const state = get();
+    if (!state.isProjectLoaded || !state.projectPath) return;
+
+    // Save all routines
+    for (const routine of state.routines) {
+      await get().saveRoutineToFile(routine);
+    }
+    
+    console.log('Project saved successfully');
   },
 
   exportProject: async (exportPath: string) => {

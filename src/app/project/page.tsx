@@ -15,7 +15,7 @@ export default function ProjectPage() {
   const searchParams = useSearchParams();
   const fromLanding = searchParams.get('from') === 'landing';
 
-  const { routines, createRoutine, duplicateRoutine, deleteRoutine, renameRoutine, loadRoutineToStudio } = useProjectStore();
+  const { routines, createRoutine, duplicateRoutine, deleteRoutine, renameRoutine, updateDescription, loadRoutineToStudio, isNameAvailable } = useProjectStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<'name' | 'description' | null>(null);
@@ -23,7 +23,7 @@ export default function ProjectPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const handleCreateNew = () => {
-    router.push('/studio');
+    createRoutine("Untitled");
   };
 
   const handleEditAuto = (routineId: string) => {
@@ -57,17 +57,28 @@ export default function ProjectPage() {
     setEditValue(currentValue);
   };
 
-  const handleSaveEdit = () => {
-    if (editingId && editingField) {
-      if (editingField === 'name') {
-        renameRoutine(editingId, editValue);
-      } else {
-        // TODO: Handle description editing in the store
-        console.log('Description editing not implemented yet');
+  const handleSaveEdit = async () => {
+    if (!(editingId && editingField)) {
+      return;
+    }
+
+    if (editingField === 'name') {
+      if(!isNameAvailable(editValue, editingId)) {
+        handleCancelEdit();
+        return;
       }
-      setEditingId(null);
-      setEditingField(null);
-      setEditValue('');
+
+      await renameRoutine(editingId, editValue);
+      handleCancelEdit();
+      
+      return;
+    } 
+
+    if (editingField === 'description') {
+      await updateDescription(editingId, editValue);
+      handleCancelEdit();
+      
+      return;
     }
   };
 

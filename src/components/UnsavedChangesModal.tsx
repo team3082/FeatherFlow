@@ -1,20 +1,22 @@
 "use client";
 
+import { FileWarning } from 'lucide-react';
 import React from 'react';
-import { AutoRoutine } from '@/types';
 
-interface DeleteConfirmationModalProps {
-  routine: AutoRoutine | null;
+interface UnsavedChangesModalProps {
+  isOpen: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
   onCancel: () => void;
-  onConfirm: () => void;
 }
 
-export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
-  routine,
-  onCancel,
-  onConfirm
+export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
+  isOpen,
+  onSave,
+  onDiscard,
+  onCancel
 }) => {
-  if (!routine) return null;
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -23,15 +25,12 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
         <div className="px-6 py-8">
           <div className="text-center">
             <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/10">
-              <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
+              <FileWarning className="w-8 h-8 text-blue-400" />
             </div>
-            <h3 className="text-xl font-bold text-gray-100 mb-2">Delete Auto</h3>
+            <h3 className="text-xl font-bold text-gray-100 mb-2">Unsaved Changes</h3>
             <p className="text-gray-300 mb-6 leading-relaxed">
-              Are you sure you want to delete <span className="font-semibold text-blue-400">{routine.name}</span>?
+              You have unsaved changes. Would you like to save before leaving?
             </p>
-            <p className="text-sm text-gray-400">This action cannot be undone.</p>
           </div>
         </div>
 
@@ -44,10 +43,16 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
             Cancel
           </button>
           <button
-            onClick={onConfirm}
+            onClick={onDiscard}
+            className="flex-1 px-5 py-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-lg font-semibold transition-all duration-200 hover:shadow-lg"
+          >
+            Don&apos;t Save
+          </button>
+          <button
+            onClick={onSave}
             className="flex-1 px-5 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold transition-all duration-200 hover:shadow-lg"
           >
-            Delete
+            Save
           </button>
         </div>
       </div>
