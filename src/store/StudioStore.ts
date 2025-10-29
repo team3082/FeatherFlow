@@ -37,7 +37,6 @@ export interface StudioState {
   addAnchorPoint: (point: Omit<AnchorPoint, 'name'>) => void;
   updateAnchorPoint: (id: number, updater: (current: AnchorPoint) => AnchorPoint) => void;
   deleteAnchorPoint: (id: number) => void;
-  moveAnchorPoint: (id: number, newPosition: Vector2) => void;
   insertAnchorOnCurve: (segmentIndex: number, t: number) => void;
   toggleAnchorCurve: (id: number) => void;
   
@@ -45,11 +44,10 @@ export interface StudioState {
   addControlPoint: (point: Omit<ControlPoint, 'name'>) => void;
   updateControlPoint: (id: number, updates: Partial<ControlPoint>) => void;
   deleteControlPoint: (id: number) => void;
-  moveControlPoint: (id: number, newT: number) => void;
   
   // Attribute Actions
   addAttribute: (pointId: number, attribute: ControlPointAttribute) => void;
-  updateAttribute: (pointId: number, attrIndex: number, updates: any) => void;
+  updateAttribute: (pointId: number, attrIndex: number, updates:  Partial<ControlPointAttribute>) => void;
   removeAttribute: (pointId: number, attrIndex: number) => void;
   
   // Selection & UI Actions
@@ -109,10 +107,6 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       anchorPoints: state.anchorPoints.filter((_, index) => index !== id),
       selectedPoint: state.selectedPoint?.type === 'anchor' && state.selectedPoint.id === id ? null : state.selectedPoint
     }));
-  },
-
-  moveAnchorPoint: (id, newPosition) => {
-    // Implementation needed
   },
 
   insertAnchorOnCurve: (segmentIndex, t) => {
@@ -203,10 +197,6 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       controlPoints: state.controlPoints.filter(cp => cp.id !== id),
       selectedPoint: state.selectedPoint?.type === 'control' && state.selectedPoint.id === id ? null : state.selectedPoint
     }));
-  },
-
-  moveControlPoint: (id, newT) => {
-    // Implementation needed
   },
 
   // Selection & UI Actions
@@ -331,7 +321,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
           ? {
               ...cp,
               attributes: cp.attributes.map((attr, i) =>
-                i === attrIndex ? { ...attr, ...updates } : attr
+                i === attrIndex ? ({ ...attr, ...updates } as ControlPointAttribute) : attr
               )
             }
           : cp

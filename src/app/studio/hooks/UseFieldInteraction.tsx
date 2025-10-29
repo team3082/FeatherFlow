@@ -200,7 +200,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     //Start panning if clicking on empty space
     setSelectedPoint(null); 
     startPanning({ x: e.clientX, y: e.clientY });
-  }, [canvasRef, viewport, checkHandleInteraction, checkAnchorInteraction, checkControlInteraction, checkCurveInteraction, handleAddPoint, startPanning]);
+  }, [canvasRef, viewport, checkHandleInteraction, checkAnchorInteraction, checkControlInteraction, checkCurveInteraction, handleAddPoint, startPanning, setSelectedPoint]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const canvas = canvasRef.current;
@@ -310,7 +310,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [handleMouseDown, handleMouseMove, handleMouseUp]);
+  }, [handleMouseDown, handleMouseMove, handleMouseUp, canvasRef]);
 
   return {
   };

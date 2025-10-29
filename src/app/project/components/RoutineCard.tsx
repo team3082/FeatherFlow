@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { AutoRoutine } from '@/types';
 import { PathPreviewCanvas } from './PathPreviewCanvas';
-import { Ellipsis, Settings } from 'lucide-react';
+import { Ellipsis } from 'lucide-react';
 
 interface RoutineCardProps {
   routine: AutoRoutine;
@@ -34,7 +34,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
   onCancelEdit,
   onEditValueChange
 }) => {
-  const [_, setHoveredCard] = useState<number | null>(null);
+  const [, setHoveredCard] = useState<number | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const handleEditAuto = (e: React.MouseEvent) => {

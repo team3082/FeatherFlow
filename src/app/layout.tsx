@@ -18,14 +18,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <Suspense>
         <body
           className={` ${spaceGrotesk.variable} antialiased`}
-          // onContextMenu={(e) => e.preventDefault()}
+          onContextMenu={(e) => e.preventDefault()}
         >
           {children}
         </body>
-      </Suspense>
     </html>
   );
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AutoRoutine, AnchorPoint, ControlPoint } from '@/types';
+import { AutoRoutine } from '@/types';
 import { useStudioStore } from './StudioStore';
 import { 
   writeTextFile, 
@@ -10,7 +10,6 @@ import {
   mkdir
 } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
-import { appDataDir, join } from '@tauri-apps/plugin-path';
 
 export interface ProjectState {
   projectPath: string | null;

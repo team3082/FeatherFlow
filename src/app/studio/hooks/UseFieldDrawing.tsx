@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, RefObject, useCallback, use } from 'react';
-import { useStudioStore, Viewport } from '@/store/StudioStore';
+import { useEffect, useRef, RefObject, useCallback } from 'react';
+import { SelectedPoint, useStudioStore, Viewport } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
 import { AnchorPoint, ControlPoint, inchToCanvas, Vector2 } from '@/types';
 
@@ -52,7 +52,7 @@ const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[]) =
   ctx.globalAlpha = 1;
 };
 
-const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint[], selectedPoint: any, getPointAtT: (t: number) => Vector2) => {
+const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint[], selectedPoint: SelectedPoint, getPointAtT: (t: number) => Vector2) => {
   controlPoints.forEach(point => {
     const posInches = getPointAtT(point.u);
 
@@ -65,7 +65,7 @@ const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: Control
       
       // Color mapping
       const colorMap: Record<string, string> = {
-        purple: '#A855F7',
+        purple: '#1256c4',
         red: '#EF4444',
         green: '#22C55E',
         blue: '#3B82F6'
@@ -89,7 +89,7 @@ const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: Control
   });
 };
 
-const drawAnchors = (ctx: CanvasRenderingContext2D, anchorPoints: any[], selectedPoint: any) => {
+const drawAnchors = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[], selectedPoint: SelectedPoint) => {
   // Color constants
   const HANDLE_LINE_COLOR = '#374151';
   const ANCHOR_COLOR = '#3B82F6';
@@ -153,7 +153,6 @@ export const useFieldDrawing = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   containerRef: RefObject<HTMLDivElement | null>,
 ) => {
-  const [fieldImageLoaded, setFieldImageLoaded] = useState(false);
   const fieldImageRef = useRef<HTMLImageElement | null>(null);
   const viewport = useStudioStore(state => state.viewport);
   const anchorPoints = useStudioStore(state => state.anchorPoints);
@@ -166,7 +165,6 @@ export const useFieldDrawing = (
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
-      setFieldImageLoaded(true);
       fieldImageRef.current = img;
       if (containerRef.current) {
         const container = containerRef.current.getBoundingClientRect();
@@ -175,7 +173,6 @@ export const useFieldDrawing = (
     };
     img.onerror = () => {
       console.error(`Failed to load field image: ${FIELD_CONFIG.imagePath}`);
-      setFieldImageLoaded(false);
     };
     img.src = FIELD_CONFIG.imagePath;
   }, [containerRef, resetView]);
@@ -206,7 +203,7 @@ export const useFieldDrawing = (
 
     //Restore
     ctx.restore();
-  }, [canvasRef, fieldImageLoaded, viewport, anchorPoints, selectedPoint, controlPoints]);
+  }, [canvasRef, viewport, anchorPoints, selectedPoint, controlPoints, getPointAtU]);
 
   // Drawing effect
   useEffect(() => {
