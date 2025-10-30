@@ -38,7 +38,7 @@ export default function Home() {
         </h1>
 
         {/* Subtitle */}
-        <p className="mt-6 text-gray-200 text-xl md:text-2xl font-light tracking-wide">
+        <p className="mt-6 text-gray-200 text-xl md:text-2xl font-medium tracking-wide">
           Auto Planner by 3082
         </p>
         

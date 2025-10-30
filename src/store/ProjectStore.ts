@@ -47,7 +47,6 @@ export interface ProjectState {
   // Project Persistence
   saveRoutineToFile: (routine: AutoRoutine) => Promise<void>;
   saveProject: () => Promise<void>;
-  exportProject: (exportPath: string) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>()((set, get) => ({
@@ -446,10 +445,5 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
     
     console.log('Project saved successfully');
-  },
-
-  exportProject: async (exportPath: string) => {
-    // TODO: Export project to specified path
-    console.log('Exporting project to:', exportPath);
   }
 }));

@@ -61,9 +61,12 @@ export default function Header({ className }: HeaderProps) {
     return (
         <>
             <header className={`relative z-10 flex items-center justify-between px-6 py-3 h-15 bg-gray-800 ${className}`}>
-                <div className="text-xl font-semibold text-white">
+                <button
+                    onClick={() => handleNavigation('/')}
+                    className="text-xl text-white font-medium hover:text-gray-300 transition-colors"
+                >
                     Feather Flow
-                </div>
+                </button>
 
                 {/* Breadcrumb Navigation - Centered */}
                 <div className="flex items-center gap-2 text-base">
@@ -79,23 +82,14 @@ export default function Header({ className }: HeaderProps) {
                         <span className="text-white font-medium">
                             {currentRoutineName || 'WELP'}
                         </span>
-                        <button
-                            onClick={() => handleNavigation('/command')}
-                            className="text-gray-400 hover:text-gray-300 transition-colors"
-                        >
-                            <ChevronRight className="w-4 h-4" />
-                        </button>
                     </>
                     )}
                 </div>
 
                 {/* Project Badge */}
-                <button
-                    onClick={() => handleNavigation('/')}
-                    className="text-xl text-white font-medium hover:text-gray-300 transition-colors"
-                >
+                <div className="text-xl font-semibold text-white">
                     {projectName}
-                </button>
+                </div>
             </header>
 
             <UnsavedChangesModal
