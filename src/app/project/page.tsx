@@ -2,18 +2,15 @@
 
 import Header from '@/components/layout/Header';
 import AmbientDots from '@/components/AmbientDots';
-import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSearchParams } from 'next/navigation';
 import { useProjectStore } from '@/store/ProjectStore';
 import { RoutineCard } from './components/RoutineCard';
 import { CreateNewCard } from './components/CreateNewCard';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
+import { useState } from 'react';
 
 export default function ProjectPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const fromLanding = searchParams.get('from') === 'landing';
 
   const { routines, createRoutine, duplicateRoutine, deleteRoutine, renameRoutine, updateDescription, loadRoutineToStudio, isNameAvailable } = useProjectStore();
 
@@ -91,7 +88,7 @@ export default function ProjectPage() {
   const routineToDelete = deleteConfirmId ? routines.find(r => r.id === deleteConfirmId) || null : null;
 
   return (
-      <div className={`flex flex-col h-screen bg-[#0a0e1a] transition-opacity duration-500 ${fromLanding ? 'opacity-0 animate-fade-in' : 'opacity-100'}`}>
+      <div className={`flex flex-col h-screen bg-[#0a0e1a]`}>
         <Header />
 
         {/* Ambient background dots */}
