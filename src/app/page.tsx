@@ -23,7 +23,6 @@ export default function Home() {
     <div
       className={`relative flex min-h-screen flex-col items-center justify-center bg-gray-900 text-gray-100 overflow-hidden`}
     >
-      {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-[#0a0e1a]" />
 
       {/* Floating dots background */}

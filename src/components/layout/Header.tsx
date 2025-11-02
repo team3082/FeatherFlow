@@ -87,7 +87,7 @@ export default function Header({ className }: HeaderProps) {
                 </div>
 
                 {/* Project Badge */}
-                <div className="text-xl font-semibold text-white">
+                <div className="text-xl font-semibold text-white" onClick={() => router.push("/command")}>
                     {projectName}
                 </div>
             </header>

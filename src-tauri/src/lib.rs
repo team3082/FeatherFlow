@@ -1,3 +1,27 @@
+mod types;
+use types::AnchorPoint;
+use types::PathPoint;
+
+const METERS_TO_INCHES: f64 = 39.3701;
+
+
+#[tauri::command]
+fn compute_travel_time(anchors: Vec<AnchorPoint>) -> f64 {
+    println!("Received {} anchors", anchors.len());
+    
+    let v_max_m = 3.0;   
+        let a_max_m = 2.0;   
+    let a_lat_m = 2.0;   
+
+
+
+    let v_max = v_max_m * METERS_TO_INCHES;      
+    let a_max = a_max_m * METERS_TO_INCHES;      
+    let a_lat = a_lat_m * METERS_TO_INCHES;    
+
+    return anchors.len() as f64 * 10.0; // Placeholder computation
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -13,6 +37,7 @@ pub fn run() {
             }
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![compute_travel_time])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

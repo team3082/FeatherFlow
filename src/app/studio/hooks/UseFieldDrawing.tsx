@@ -65,10 +65,10 @@ const drawControlPoints = (ctx: CanvasRenderingContext2D, controlPoints: Control
       
       // Color mapping
       const colorMap: Record<string, string> = {
-        purple: '#1256c4',
+        purple: '#7211b8',
         red: '#EF4444',
         green: '#22C55E',
-        blue: '#3B82F6'
+        blue: '#1256c4'
       };
       
       const baseColor = colorMap[customColor] || colorMap.blue;

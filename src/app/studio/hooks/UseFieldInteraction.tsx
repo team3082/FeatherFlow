@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { useStudioStore } from '@/store/StudioStore';
 import { canvasToInch } from '@/types';
+import { invoke } from '@tauri-apps/api/core';
 
 export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const viewport = useStudioStore(state => state.viewport);
@@ -274,6 +275,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
     stopPanning();
+    invoke<number>("compute_travel_time", { anchors: anchorPoints });
   }, [setIsDragging, stopPanning]);
 
   // Keyboard event handler for deleting points
