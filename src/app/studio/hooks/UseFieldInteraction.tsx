@@ -276,7 +276,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     setIsDragging(false);
     stopPanning();
     invoke<number>("compute_travel_time", { anchors: anchorPoints });
-  }, [setIsDragging, stopPanning]);
+  }, [setIsDragging, stopPanning, anchorPoints]);
 
   // Keyboard event handler for deleting points
   useEffect(() => {
