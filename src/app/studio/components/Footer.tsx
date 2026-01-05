@@ -8,6 +8,9 @@ export default function Footer() {
 	const anchorPoints = useStudioStore(state => state.anchorPoints);
 	const controlPoints = useStudioStore(state => state.controlPoints);
 	const viewport = useStudioStore(state => state.viewport);
+	const time = useStudioStore(state => state.trajectoryTime);
+	const showingVelocity = useStudioStore(state => state.showingVelocity);
+	const setShowingVelocity = useStudioStore(state => state.setShowingVelocity);
 
 	// Get selected point display name
 	const getSelectedDisplay = () => {
@@ -24,16 +27,23 @@ export default function Footer() {
 	};
 
 	return (
-		<div className="flex items-center justify-between px-6 py-3 bg-gray-800 border-t border-gray-700 text-sm font-medium">
-			<div className="text-gray-300">
-				Cursor: ({cursorPosition.x.toFixed(1)}, {cursorPosition.y.toFixed(1)}) in
+		<div className="grid grid-cols-3 px-6 py-3 bg-gray-800 border-t border-gray-700 text-sm font-medium">
+			<div className="flex items-center gap-6 text-gray-300">
+				<span>Cursor: ({cursorPosition.x.toFixed(1)}, {cursorPosition.y.toFixed(1)}) in</span>
+				<span>Time: {time.toFixed(2)}s</span>
+				<button
+					onClick={() => setShowingVelocity(!showingVelocity)}
+					className="hover:text-gray-100 transition-colors underline-offset-2"
+				>
+					Velocity: {showingVelocity ? "On" : "Off"}
+				</button>
 			</div>
 
-			<div className="text-gray-300">
+			<div className="text-center ju text-gray-300">
 				Selected: {getSelectedDisplay()}
 			</div>
 
-			<div className="flex items-center gap-4 text-gray-300">
+			<div className="flex items-center justify-end gap-6 text-gray-300">
 				<span>Anchors: {anchorPoints.length}</span>
 				<span>Controls: {controlPoints.length}</span>
 				<span>Zoom: {(viewport.scale * 100).toFixed(0)}%</span>

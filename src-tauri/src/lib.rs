@@ -3,82 +3,134 @@ mod types;
 mod vector2;
 
 use bezier_curve::BezierCurve;
-use types::{AnchorPoint, PathPoint, Vector2};
+use types::{AnchorPoint, PathPoint, Vector2, TrajectoryResult};
 
 const MAX_VELOCITY: f64 = 118.0; 
 const MAX_ACCELERATION: f64 =  118.0;
+const MAX_LATERAL_ACCELERATION: f64 = 79.0;
 const OVERSAMPLING_FACTOR: usize = 100;
-const SAMPLING_DISTANCE: f64 = 0.2;   
+const SAMPLING_DISTANCE: f64 = 1.0; 
+
 
 #[tauri::command]
-fn compute_travel_time(anchors: Vec<AnchorPoint>) -> f64 {
-    if anchors.len() < 2 {
-        return 0.0;
+fn compute_travel_time(anchors: Vec<AnchorPoint>) -> TrajectoryResult {
+    let mut segments = vec![Vec::new()];
+    let mut index: usize = 0;
+
+    for anchor in anchors {
+        segments[index].push(anchor.clone());
+        
+        if !anchor.is_curved {
+            segments.push(Vec::new());
+            index += 1;
+            segments[index].push(anchor);
+        }
     }
 
-    println!("Generating trajectory for {} anchors...", anchors.len());
+    let mut total_path_points: Vec<PathPoint> = Vec::new();
+    let mut cumulative_time: f64 = 0.0;
 
-    // 1) Generate equal-distance samples along the whole path (arc-length resampling)
+    for segment in segments {
+        let segment_result = compute_travel_time_for_anchors(segment);
+
+        for mut point in segment_result.path_points {
+            point.time += cumulative_time;
+            total_path_points.push(point);
+        }
+
+        cumulative_time += segment_result.total_time;
+    }
+
+    TrajectoryResult {
+        total_time: cumulative_time,
+        path_points: total_path_points,
+    }
+}
+
+fn compute_travel_time_for_anchors(anchors: Vec<AnchorPoint>) -> TrajectoryResult {
+    if anchors.len() < 2 {
+        return TrajectoryResult {
+            total_time: 0.0,
+            path_points: Vec::new(),
+        };
+    }
+
     let mut path_points = generate_path_points(&anchors);
     if path_points.is_empty() {
-        return 0.0;
+        return TrajectoryResult {
+            total_time: 0.0,
+            path_points: Vec::new(),
+        };
     }
 
-    // 2) Set velocity limits (NO curvature-based limit; just clamp to MAX_VELOCITY)
-    for point in &mut path_points {
-        point.velocity = MAX_VELOCITY;
+    // --- Calculate scalar speed profile ---
+    let mut scalar_velocities = Vec::with_capacity(path_points.len());
+
+    // 1. Set velocity limits based on path curvature
+    for point in &path_points {
+        let v_limit = if point.curvature.abs() > 1e-9 {
+            (MAX_LATERAL_ACCELERATION / point.curvature.abs()).sqrt()
+        } else {
+            MAX_VELOCITY
+        };
+        scalar_velocities.push(MAX_VELOCITY.min(v_limit));
     }
 
-    // 3) Forward pass (acceleration limit)
-    path_points[0].velocity = 0.0;
+    // 2. Forward pass (enforce acceleration limits)
+    scalar_velocities[0] = 0.0;
     for i in 0..path_points.len() - 1 {
-        let v_now = path_points[i].velocity;
+        let v_now = scalar_velocities[i];
         let ds = path_points[i + 1].s - path_points[i].s;
         let v_possible = (v_now * v_now + 2.0 * MAX_ACCELERATION * ds).sqrt();
-        path_points[i + 1].velocity = path_points[i + 1].velocity.min(v_possible);
+        scalar_velocities[i + 1] = scalar_velocities[i + 1].min(v_possible);
     }
 
-    // 4) Backward pass (deceleration limit)
+    // 3. Backward pass (enforce deceleration limits)
     let last = path_points.len() - 1;
-    path_points[last].velocity = 0.0;
+    scalar_velocities[last] = 0.0;
     for i in (0..last).rev() {
-        let v_next = path_points[i + 1].velocity;
+        let v_next = scalar_velocities[i + 1];
         let ds = path_points[i + 1].s - path_points[i].s;
         let v_possible = (v_next * v_next + 2.0 * MAX_ACCELERATION * ds).sqrt();
-        path_points[i].velocity = path_points[i].velocity.min(v_possible);
+        scalar_velocities[i] = scalar_velocities[i].min(v_possible);
     }
 
-    // 5) Time integration
+    // 4. Time integration & convert to 2D velocity vectors
     path_points[0].time = 0.0;
+    path_points[0].velocity = Vector2 { x: 0.0, y: 0.0 };
+
     for i in 0..path_points.len() - 1 {
-        let v_i = path_points[i].velocity;
-        let v_ip1 = path_points[i + 1].velocity;
+        let v_i = scalar_velocities[i];
+        let v_ip1 = scalar_velocities[i + 1];
         let ds = path_points[i + 1].s - path_points[i].s;
 
+        // Integrate time
         let dt = if (v_i + v_ip1).abs() > 1e-9 {
             2.0 * ds / (v_i + v_ip1)
         } else {
             0.0
         };
         path_points[i + 1].time = path_points[i].time + dt;
+
+        // Calculate tangent vector and set velocity
+        let p1 = Vector2 { x: path_points[i].x, y: path_points[i].y };
+        let p2 = Vector2 { x: path_points[i + 1].x, y: path_points[i + 1].y };
+        let tangent = (p2 - p1).normalize();
+        path_points[i].velocity = tangent * v_i;
     }
 
-    // println!("--- Trajectory Details ---");
-    // println!(
-    //     "{:<5} | {:<18} | {:<10} | {:<10} | {:<10}",
-    //     "Idx", "Position", "Dist (s)", "Vel (v)", "Time (t)"
-    // );
-    // for (i, p) in path_points.iter().enumerate() {
-    //     println!(
-    //         "{:<5} | ({:<6.2}, {:<6.2}) | {:<10.2} | {:<10.2} | {:<10.3}",
-    //         i, p.x, p.y, p.s, p.velocity, p.time
-    //     );
-    // }
+    // Set last point velocity to zero
+    if let Some(last_point) = path_points.last_mut() {
+        last_point.velocity = Vector2 { x: 0.0, y: 0.0 };
+    }
 
     let total_time = path_points.last().map_or(0.0, |p| p.time);
     println!("Total computed travel time: {:.3} seconds", total_time);
 
-    total_time
+    TrajectoryResult {
+        total_time,
+        path_points,
+    }
 }
 
 /// Equal-distance resampling over all Bézier segments (no curvature used).
@@ -133,9 +185,8 @@ fn generate_path_points(anchors: &[AnchorPoint]) -> Vec<PathPoint> {
                 x: pos.x,
                 y: pos.y,
                 s: cumulative_s_global + s_along_seg,
-                // curvature not used; keep zero if your struct has it
-                curvature: 0.0,
-                velocity: 0.0,
+                curvature: curve.curvature(t),
+                velocity: Vector2 { x: 0.0, y: 0.0 },
                 time: 0.0,
             });
 
@@ -158,7 +209,7 @@ fn generate_path_points(anchors: &[AnchorPoint]) -> Vec<PathPoint> {
                     y: last_pos.y,
                     s: last_p.s + d,
                     curvature: 0.0,
-                    velocity: 0.0,
+                    velocity: Vector2 { x: 0.0, y: 0.0 },
                     time: 0.0,
                 });
             }
@@ -168,7 +219,7 @@ fn generate_path_points(anchors: &[AnchorPoint]) -> Vec<PathPoint> {
                 y: last_pos.y,
                 s: 0.0,
                 curvature: 0.0,
-                velocity: 0.0,
+                velocity: Vector2 { x: 0.0, y: 0.0 },
                 time: 0.0,
             });
         }
@@ -218,4 +269,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

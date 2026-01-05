@@ -3,10 +3,10 @@
 import { Plus } from 'lucide-react';
 
 const commandTypes = [
-  { name: 'elevatorRaise', label: 'Drive' },
-  { name: 'coralDrop', label: 'Turn' },
-  { name: 'wait', label: 'Wait' },
-  { name: 'elevatorLower', label: 'Elevator' },
+  { name: 'elevatorRaise', label: 'ElevatorRaise' },
+  { name: 'coralDrop', label: 'CoralDrop' },
+  { name: 'alignToApril', label: 'AlignToApril' },
+  { name: 'elevatorLower', label: 'ElevatorLower' },
   { name: 'shoot', label: 'Shoot' },
 ];
 

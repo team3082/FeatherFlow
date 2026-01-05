@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Settings } from 'lucide-react';
 import { useProjectStore } from '@/store/ProjectStore';
 import { UnsavedChangesModal } from '@/components/UnsavedChangesModal';
 
@@ -72,11 +72,15 @@ export default function Header({ className }: HeaderProps) {
                 <div className="flex items-center gap-2 text-base">
                     {(pathname === '/studio' || pathname === '/test') && (
                     <>
+                        <span className="text-white font-medium">
+                            {projectName}
+                        </span>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
                         <button
-                            onClick={() => handleNavigation('/project')}
+                            onClick={() => handleNavigation('/command')}
                             className="text-white hover:text-gray-300 transition-colors font-medium"
                         >
-                            Project
+                            Auto
                         </button>
                         <ChevronRight className="w-4 h-4 text-gray-400" />
                         <span className="text-white font-medium">
@@ -87,8 +91,12 @@ export default function Header({ className }: HeaderProps) {
                 </div>
 
                 {/* Project Badge */}
-                <div className="text-xl font-semibold text-white" onClick={() => router.push("/command")}>
+                {/* <div className="text-xl font-semibold text-white" onClick={() => router.push("/command")}>
                     {projectName}
+                </div> */}
+
+                <div>
+                    <Settings />
                 </div>
             </header>
 

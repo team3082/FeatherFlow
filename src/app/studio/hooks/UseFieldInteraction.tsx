@@ -3,7 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { useStudioStore } from '@/store/StudioStore';
 import { canvasToInch } from '@/types';
-import { invoke } from '@tauri-apps/api/core';
+
 
 export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const viewport = useStudioStore(state => state.viewport);
@@ -28,6 +28,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
   const updatePanning = useStudioStore(state => state.updatePanning);
   const stopPanning = useStudioStore(state => state.stopPanning);
   const insertAnchorOnCurve = useStudioStore(state => state.insertAnchorOnCurve);
+  const invokeTrajectoryComputation = useStudioStore(state => state.invokeTrajectoryComputation);
 
   const findClosestU = useCallback((x: number, y: number) => {
     let closestU = 0;
@@ -271,12 +272,13 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
       }
     }
   }, [canvasRef, viewport, isDragging, selectedPoint, setCursorPosition, updateAnchorPoint, updateControlPoint, findClosestU, anchorPoints, isPanning, updatePanning]);
-
   const handleMouseUp = useCallback(() => {
+    if(isDragging){
+      invokeTrajectoryComputation();
+    }
     setIsDragging(false);
     stopPanning();
-    invoke<number>("compute_travel_time", { anchors: anchorPoints });
-  }, [setIsDragging, stopPanning, anchorPoints]);
+  }, [setIsDragging, stopPanning, invokeTrajectoryComputation, isDragging]);
 
   // Keyboard event handler for deleting points
   useEffect(() => {

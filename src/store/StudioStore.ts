@@ -3,6 +3,8 @@ import { AnchorPoint } from '@/types/AnchorPoint';
 import { BezierCurve } from '@/types/BezierCurve';
 import { Vector2 } from '@/types/Vector2';
 import { ControlPoint, ControlPointAttribute } from '@/types/ControlPoint';
+import { TrajectoryResult } from '@/types/PathPoint';
+import { invoke } from '@tauri-apps/api/core';
 
 type ActiveToolType = 'anchorTool' | 'controlTool';
 
@@ -23,6 +25,9 @@ export interface StudioState {
   controlPoints: ControlPoint[];
   selectedPoint: SelectedPoint;
   activeTool: ActiveToolType;
+  trajectory: TrajectoryResult | null;
+  trajectoryTime: number;
+  showingVelocity: boolean;
 
   // Pan & Zoom
   viewport: Viewport;
@@ -57,6 +62,10 @@ export interface StudioState {
 
   setCursorPosition: (position: Vector2) => void;
   setIsDragging: (isDragging: boolean) => void;
+  invokeTrajectoryComputation: () => void;
+
+  setTrajectory: (trajectory: TrajectoryResult | null) => void;
+  setShowingVelocity: (showing: boolean) => void;
 
 	//Panning
 	startPanning: (point: Vector2) => void;
@@ -86,6 +95,13 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 	lastPanPosition: { x: 0, y: 0 },
   cursorPosition: { x: 0, y: 0 },
   isDragging: false,
+  trajectory: null,
+  trajectoryTime: 0,
+  showingVelocity: false,
+
+  setShowingVelocity(showing: boolean) {
+    set({ showingVelocity: showing });
+  },
 
   // Anchor Point Actions
   addAnchorPoint: (point) => {
@@ -342,7 +358,17 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     }));
   },
 
+  invokeTrajectoryComputation: () => {
+    const state = get();
+    invoke<TrajectoryResult>("compute_travel_time", { anchors: state.anchorPoints })
+      .then(result => {
+        set({ trajectory: result });
+        set({ trajectoryTime: result.totalTime });
+      });
+  },
+
   // Load/Save Actions
   setAnchorPoints: (points) => set({ anchorPoints: points }),
-  setControlPoints: (points) => set({ controlPoints: points })
+  setControlPoints: (points) => set({ controlPoints: points }),
+  setTrajectory: (trajectory) => set({ trajectory })
 }));

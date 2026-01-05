@@ -20,7 +20,7 @@ export default function Studio() {
   }, [isProjectLoaded, router]);
 
   if (!isProjectLoaded) {
-    return null; // Or a loading spinner
+    return null; // Or a loading spinnern
   }
 
   return (

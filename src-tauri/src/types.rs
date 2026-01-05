@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Vector2 {
     pub x: f64,
@@ -41,6 +41,18 @@ impl Vector2 {
     pub fn magnitude(&self) -> f64 {
         self.x.hypot(self.y)
     }
+
+    pub fn normalize(&self) -> Self {
+        let mag = self.magnitude();
+        if mag > 1e-9 {
+            Self {
+                x: self.x / mag,
+                y: self.y / mag,
+            }
+        } else {
+            Self { x: 0.0, y: 0.0 }
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -54,12 +66,20 @@ pub struct AnchorPoint {
     pub name: String,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct PathPoint {
     pub x: f64,
     pub y: f64,
     pub s: f64,          // Cumulative distance (arc length)
     pub curvature: f64,
-    pub velocity: f64,
+    pub velocity: Vector2,
     pub time: f64,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TrajectoryResult {
+    pub total_time: f64,
+    pub path_points: Vec<PathPoint>,
 }
