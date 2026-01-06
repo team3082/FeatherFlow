@@ -9,8 +9,8 @@ import { invoke } from '@tauri-apps/api/core';
 type ActiveToolType = 'anchorTool' | 'controlTool';
 
 export type SelectedPoint = {
-  type: 'anchor' | 'handleOut' | 'handleIn' | 'control';
-  id: number;
+  type: 'anchor' | 'handleOut' | 'handleIn' | 'control' | 'snapPoint';
+  id: number | string; // number for anchor/control, string for snapPoint
 } | null;
 
 export interface Viewport {
@@ -66,6 +66,10 @@ export interface StudioState {
 
   setTrajectory: (trajectory: TrajectoryResult | null) => void;
   setShowingVelocity: (showing: boolean) => void;
+
+  // Snap Point Actions
+  snapAnchorToPoint: (anchorId: number, snapPointId: string, snapPointPosition: Vector2) => void;
+  unsnapAnchor: (anchorId: number) => void;
 
 	//Panning
 	startPanning: (point: Vector2) => void;
@@ -314,7 +318,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   getSelectedAnchor: () => {
     const state = get();
     if (state.selectedPoint && (state.selectedPoint.type === 'anchor' || state.selectedPoint.type === 'handleOut' || state.selectedPoint.type === 'handleIn')) {
-      return state.anchorPoints[state.selectedPoint.id];
+      return state.anchorPoints[state.selectedPoint.id as number];
     }
     return undefined;
   },
@@ -355,6 +359,29 @@ export const useStudioStore = create<StudioState>((set, get) => ({
             }
           : cp
       )
+    }));
+  },
+
+  // Snap Point Actions
+  snapAnchorToPoint: (anchorId, snapPointId, snapPointPosition) => {
+    set((state) => ({
+      anchorPoints: state.anchorPoints.map((anchor, index) =>
+        index === anchorId
+          ? { ...anchor, position: { ...snapPointPosition }, snapPointId }
+          : anchor
+      )
+    }));
+  },
+
+  unsnapAnchor: (anchorId) => {
+    set((state) => ({
+      anchorPoints: state.anchorPoints.map((anchor, index) => {
+        if (index === anchorId) {
+          const { snapPointId, ...rest } = anchor;
+          return rest;
+        }
+        return anchor;
+      })
     }));
   },
 

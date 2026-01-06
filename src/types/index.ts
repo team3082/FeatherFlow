@@ -3,6 +3,9 @@ export { BezierCurve } from './BezierCurve';
 export type { ControlPoint } from './ControlPoint';
 export type { AnchorPoint } from './AnchorPoint';
 export type { AutoRoutine } from './AutoRoutine';
+export type { SnapPoint, SnapPointColor } from './SnapPoint';
+export type { ProjectConfig } from './ProjectConfig';
+export { defaultProjectConfig } from './ProjectConfig';
 
 // Reference points
 const canvasRef1 = { x: 174.73, y: 587.47 };

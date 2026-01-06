@@ -1,7 +1,8 @@
 import { useEffect, useRef, RefObject, useCallback } from 'react';
 import { SelectedPoint, useStudioStore, Viewport } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
-import { AnchorPoint, ControlPoint, inchToCanvas, Vector2 } from '@/types';
+import { AnchorPoint, ControlPoint, inchToCanvas, Vector2, SnapPoint } from '@/types';
+import { useProjectStore } from '@/store/ProjectStore';
 
 // Drawing functions
 const setupTransform = (ctx: CanvasRenderingContext2D, viewport: Viewport) => {
@@ -149,6 +150,57 @@ const drawAnchors = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[],
   });
 };
 
+const drawSnapPoints = (ctx: CanvasRenderingContext2D, snapPoints: SnapPoint[], selectedPoint: SelectedPoint, snapEnabled: boolean) => {
+  const SNAP_COLOR_MAP: Record<string, string> = {
+    blue: '#3B82F6',
+    red: '#EF4444',
+    purple: '#A855F7',
+    yellow: '#FACC15',
+    cyan: '#06B6D4',
+    green: '#10B981',
+    orange: '#F97316'
+  };
+
+  snapPoints.forEach((snapPoint) => {
+    if (!snapPoint.enabled && !snapEnabled) return;
+
+    const pos = inchToCanvas(snapPoint.position.x, snapPoint.position.y);
+    const color = SNAP_COLOR_MAP[snapPoint.color || 'blue'];
+    const isSelected = selectedPoint?.type === 'snapPoint' && selectedPoint?.id === snapPoint.id;
+    const opacity = snapPoint.enabled && snapEnabled ? 1.0 : 0.4;
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+
+    // Draw diamond shape (rotated square)
+    const size = isSelected ? 8 : 6;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y - size);
+    ctx.lineTo(pos.x + size, pos.y);
+    ctx.lineTo(pos.x, pos.y + size);
+    ctx.lineTo(pos.x - size, pos.y);
+    ctx.closePath();
+    ctx.fill();
+
+    // Draw border
+    ctx.strokeStyle = isSelected ? '#ffffff' : color;
+    ctx.lineWidth = isSelected ? 2.5 : 1.5;
+    ctx.stroke();
+
+    // Draw lock indicator if locked
+    if (snapPoint.locked) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('L', pos.x, pos.y);
+    }
+
+    ctx.restore();
+  });
+};
+
 export const useFieldDrawing = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   containerRef: RefObject<HTMLDivElement | null>,
@@ -160,6 +212,9 @@ export const useFieldDrawing = (
   const selectedPoint = useStudioStore(state => state.selectedPoint);
   const getPointAtU = useStudioStore(state => state.getPointAtU);
   const resetView = useStudioStore(state => state.resetView);
+  
+  const snapPoints = useProjectStore(state => state.snapPoints);
+  const snapEnabled = useProjectStore(state => state.snapEnabled);
 
   // Load field image
   useEffect(() => {
@@ -192,6 +247,9 @@ export const useFieldDrawing = (
     // Draw field
     drawField(ctx, fieldImageRef.current, FIELD_CONFIG);
 
+    // Draw snap points (under paths)
+    drawSnapPoints(ctx, snapPoints, selectedPoint, snapEnabled);
+
     // Draw paths
     drawPaths(ctx, anchorPoints);
 
@@ -203,7 +261,7 @@ export const useFieldDrawing = (
 
     //Restore
     ctx.restore();
-  }, [canvasRef, viewport, anchorPoints, selectedPoint, controlPoints, getPointAtU]);
+  }, [canvasRef, viewport, anchorPoints, selectedPoint, controlPoints, getPointAtU, snapPoints, snapEnabled]);
 
   // Drawing effect
   useEffect(() => {

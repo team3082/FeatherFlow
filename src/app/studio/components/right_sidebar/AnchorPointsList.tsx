@@ -1,7 +1,8 @@
 "use client";
 
 import { useStudioStore } from "@/store/StudioStore";
-import { Trash } from "lucide-react";
+import { useProjectStore } from "@/store/ProjectStore";
+import { Trash, Link } from "lucide-react";
 
 export default function AnchorPointsList() {
 	const anchorPoints = useStudioStore(state => state.anchorPoints);
@@ -9,6 +10,7 @@ export default function AnchorPointsList() {
 	const setSelectedPoint = useStudioStore(state => state.setSelectedPoint);
 	const setActiveTool = useStudioStore(state => state.setActiveTool);
 	const deleteAnchorPoint = useStudioStore(state => state.deleteAnchorPoint);
+	const snapPoints = useProjectStore(state => state.snapPoints);
 
 	return (
 		<div className="mb-6">
@@ -18,6 +20,8 @@ export default function AnchorPointsList() {
 			<div className="flex flex-col gap-1.5">
 				{anchorPoints.map((point, index) => {
 					const isSelected = selectedPoint?.type === 'anchor' && selectedPoint?.id === index;
+					const snappedPoint = point.snapPointId ? snapPoints.find(sp => sp.id === point.snapPointId) : null;
+					
 					return (
 						<div
 							key={index}
@@ -32,8 +36,14 @@ export default function AnchorPointsList() {
 							}`}
 						>
 							<div>
-								<div className="text-sm font-semibold mb-0.5">
+								<div className="text-sm font-semibold mb-0.5 flex items-center gap-1.5">
 									{point.name || `Anchor ${index + 1}`}
+									{snappedPoint && (
+										<span className="inline-flex items-center gap-1 text-xs text-white-400">
+											<Link className="w-3 h-3" />
+											{snappedPoint.name}
+										</span>
+									)}
 								</div>
 								<div className="text-xs text-gray-300 font-medium">
 									({point.position.x.toFixed(2)}, {point.position.y.toFixed(2)})

@@ -16,9 +16,13 @@ export default function Footer() {
 	const getSelectedDisplay = () => {
 		if (!selectedPoint) return "None";
 
+		if (selectedPoint.type === 'snapPoint') {
+			return `Snap Point ${selectedPoint.id}`;
+		}
+
 		if (selectedPoint.type === 'anchor' || selectedPoint.type === 'handleOut' || selectedPoint.type === 'handleIn') {
-			const anchor = anchorPoints[selectedPoint.id];
-			return anchor?.name || `Anchor ${selectedPoint.id + 1}`;
+			const anchor = anchorPoints[selectedPoint.id as number];
+			return anchor?.name || `Anchor ${(selectedPoint.id as number) + 1}`;
 		} else if (selectedPoint.type === 'control') {
 			const control = controlPoints.find(cp => cp.id === selectedPoint.id);
 			return control?.name || `Control ${control?.id}`;
@@ -28,25 +32,25 @@ export default function Footer() {
 
 	return (
 		<div className="grid grid-cols-3 px-6 py-3 bg-gray-800 border-t border-gray-700 text-sm font-medium">
-			<div className="flex items-center gap-6 text-gray-300">
-				<span>Cursor: ({cursorPosition.x.toFixed(1)}, {cursorPosition.y.toFixed(1)}) in</span>
-				<span>Time: {time.toFixed(2)}s</span>
-				<button
-					onClick={() => setShowingVelocity(!showingVelocity)}
-					className="hover:text-gray-100 transition-colors underline-offset-2"
-				>
-					Velocity: {showingVelocity ? "On" : "Off"}
-				</button>
-			</div>
+				<div className="flex items-center gap-6 text-gray-300">
+					<span>Cursor: ({cursorPosition.x.toFixed(1)}, {cursorPosition.y.toFixed(1)}) in</span>
+					<span>Time: {time.toFixed(2)}s</span>
+					<button
+						onClick={() => setShowingVelocity(!showingVelocity)}
+						className="hover:text-gray-100 transition-colors underline-offset-2"
+					>
+						Velocity: {showingVelocity ? "On" : "Off"}
+					</button>
+				</div>
 
-			<div className="text-center ju text-gray-300">
-				Selected: {getSelectedDisplay()}
-			</div>
+				<div className="text-center ju text-gray-300">
+					Selected: {getSelectedDisplay()}
+				</div>
 
-			<div className="flex items-center justify-end gap-6 text-gray-300">
-				<span>Anchors: {anchorPoints.length}</span>
-				<span>Controls: {controlPoints.length}</span>
-				<span>Zoom: {(viewport.scale * 100).toFixed(0)}%</span>
+				<div className="flex items-center justify-end gap-6 text-gray-300">
+					<span>Anchors: {anchorPoints.length}</span>
+					<span>Controls: {controlPoints.length}</span>
+					<span>Zoom: {(viewport.scale * 100).toFixed(0)}%</span>
 			</div>
 		</div>
 	);

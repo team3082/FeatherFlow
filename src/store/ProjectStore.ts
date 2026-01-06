@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AutoRoutine } from '@/types';
+import { AutoRoutine, SnapPoint, ProjectConfig, defaultProjectConfig } from '@/types';
 import { useStudioStore } from './StudioStore';
 import { 
   writeTextFile, 
@@ -17,6 +17,22 @@ export interface ProjectState {
 
   routines: AutoRoutine[];
   currentRoutineId: string | null;
+
+  // Snap Points (from global config)
+  snapPoints: SnapPoint[];
+  snapEnabled: boolean;
+  snapRadius: number;
+
+  // Snap Point Management
+  loadConfig: () => Promise<void>;
+  saveConfig: () => Promise<void>;
+  addSnapPoint: (snapPoint: Omit<SnapPoint, 'id'>) => Promise<void>;
+  updateSnapPoint: (id: string, updates: Partial<SnapPoint>) => Promise<void>;
+  deleteSnapPoint: (id: string) => Promise<void>;
+  toggleSnapEnabled: () => Promise<void>;
+  setSnapRadius: (radius: number) => Promise<void>;
+  getSnapPoint: (id: string) => SnapPoint | undefined;
+  syncAnchorsToSnapPoint: (snapPointId: string) => Promise<void>;
 
   // Project Management
   selectProjectFolder: () => Promise<void>;
@@ -55,6 +71,203 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   isProjectLoaded: false,
   routines: [],
   currentRoutineId: null,
+  snapPoints: [],
+  snapEnabled: true,
+  snapRadius: 6,
+
+  // Snap Point Management
+  loadConfig: async () => {
+    const state = get();
+    if (!state.projectPath) return;
+
+    try {
+      const configPath = `${state.projectPath}/src/main/deploy/FeatherFlow/config.json`;
+      const configExists = await exists(configPath);
+
+      if (configExists) {
+        const content = await readTextFile(configPath);
+        const config: ProjectConfig = JSON.parse(content);
+        
+        set({
+          snapPoints: config.snapPoints || [],
+          snapEnabled: config.snapSettings?.enabled ?? true,
+          snapRadius: config.snapSettings?.radius ?? 6
+        });
+      } else {
+        // Create default config
+        set({
+          snapPoints: [],
+          snapEnabled: true,
+          snapRadius: 6
+        });
+        await get().saveConfig();
+      }
+    } catch (error) {
+      console.error('Failed to load config:', error);
+      set({
+        snapPoints: [],
+        snapEnabled: true,
+        snapRadius: 6
+      });
+    }
+  },
+
+  saveConfig: async () => {
+    const state = get();
+    if (!state.projectPath) return;
+
+    try {
+      const routinesPath = `${state.projectPath}/src/main/deploy/FeatherFlow`;
+      const configPath = `${routinesPath}/config.json`;
+
+      // Ensure folder exists
+      const folderExists = await exists(routinesPath);
+      if (!folderExists) {
+        await mkdir(routinesPath, { recursive: true });
+      }
+
+      const config: ProjectConfig = {
+        snapPoints: state.snapPoints,
+        snapSettings: {
+          enabled: state.snapEnabled,
+          radius: state.snapRadius
+        }
+      };
+
+      await writeTextFile(configPath, JSON.stringify(config, null, 2));
+      console.log('Config saved successfully');
+    } catch (error) {
+      console.error('Failed to save config:', error);
+    }
+  },
+
+  addSnapPoint: async (snapPoint: Omit<SnapPoint, 'id'>) => {
+    const newSnapPoint: SnapPoint = {
+      ...snapPoint,
+      id: `snap-${Date.now()}`
+    };
+
+    set(state => ({
+      snapPoints: [...state.snapPoints, newSnapPoint]
+    }));
+
+    await get().saveConfig();
+  },
+
+  updateSnapPoint: async (id: string, updates: Partial<SnapPoint>) => {
+    const state = get();
+    const snapPoint = state.snapPoints.find(sp => sp.id === id);
+    if (!snapPoint) return;
+
+    // Check if position changed
+    const positionChanged = updates.position && 
+      (updates.position.x !== snapPoint.position.x || updates.position.y !== snapPoint.position.y);
+
+    set(state => ({
+      snapPoints: state.snapPoints.map(sp =>
+        sp.id === id ? { ...sp, ...updates } : sp
+      )
+    }));
+
+    await get().saveConfig();
+
+    // If position changed, sync all anchors using this snap point
+    if (positionChanged) {
+      await get().syncAnchorsToSnapPoint(id);
+    }
+  },
+
+  deleteSnapPoint: async (id: string) => {
+    // Remove snap point from config
+    set(state => ({
+      snapPoints: state.snapPoints.filter(sp => sp.id !== id)
+    }));
+
+    await get().saveConfig();
+
+    // Remove snapPointId references from all routines
+    const state = get();
+    for (const routine of state.routines) {
+      let updated = false;
+      const updatedAnchorPoints = routine.anchorPoints.map(anchor => {
+        if (anchor.snapPointId === id) {
+          updated = true;
+          const { snapPointId, ...rest } = anchor;
+          return rest;
+        }
+        return anchor;
+      });
+
+      if (updated) {
+        const updatedRoutine = {
+          ...routine,
+          anchorPoints: updatedAnchorPoints,
+          lastModified: new Date()
+        };
+        
+        set(state => ({
+          routines: state.routines.map(r => r.id === routine.id ? updatedRoutine : r)
+        }));
+
+        await get().saveRoutineToFile(updatedRoutine);
+      }
+    }
+  },
+
+  toggleSnapEnabled: async () => {
+    set(state => ({ snapEnabled: !state.snapEnabled }));
+    await get().saveConfig();
+  },
+
+  setSnapRadius: async (radius: number) => {
+    set({ snapRadius: Math.max(1, Math.min(20, radius)) });
+    await get().saveConfig();
+  },
+
+  getSnapPoint: (id: string) => {
+    return get().snapPoints.find(sp => sp.id === id);
+  },
+
+  syncAnchorsToSnapPoint: async (snapPointId: string) => {
+    const state = get();
+    const snapPoint = state.snapPoints.find(sp => sp.id === snapPointId);
+    if (!snapPoint) return;
+
+    // Update all routines that have anchors referencing this snap point
+    for (const routine of state.routines) {
+      let updated = false;
+      const updatedAnchorPoints = routine.anchorPoints.map(anchor => {
+        if (anchor.snapPointId === snapPointId) {
+          updated = true;
+          return {
+            ...anchor,
+            position: { ...snapPoint.position }
+          };
+        }
+        return anchor;
+      });
+
+      if (updated) {
+        const updatedRoutine = {
+          ...routine,
+          anchorPoints: updatedAnchorPoints,
+          lastModified: new Date()
+        };
+        
+        set(state => ({
+          routines: state.routines.map(r => r.id === routine.id ? updatedRoutine : r)
+        }));
+
+        await get().saveRoutineToFile(updatedRoutine);
+
+        // If this is the current routine, update studio too
+        if (state.currentRoutineId === routine.id) {
+          const studioStore = useStudioStore.getState();
+          studioStore.setAnchorPoints(updatedAnchorPoints);
+        }
+      }
+    }
+  },
 
   // Project Management
   selectProjectFolder: async () => {
@@ -89,7 +302,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       const loadedRoutines: AutoRoutine[] = [];
 
       for (const entry of entries) {
-        if (entry.name?.endsWith('.json')) {
+        if (entry.name?.endsWith('.ff')) {
           const filePath = `${routinesPath}/${entry.name}`;
           const content = await readTextFile(filePath);
           const routine = JSON.parse(content) as AutoRoutine;
@@ -107,6 +320,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         isProjectLoaded: true, 
         routines: loadedRoutines
       });
+      
+      // Load config after loading routines
+      await get().loadConfig();
       
       console.log(`Loaded ${loadedRoutines.length} routines from ${projectPath}`);
     } catch (error) {
@@ -238,7 +454,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // Delete file if project is loaded
     if (state.isProjectLoaded && state.projectPath) {
       try {
-        const filePath = `${state.projectPath}/src/main/deploy/FeatherFlow/${routine.name}.json`;
+        const filePath = `${state.projectPath}/src/main/deploy/FeatherFlow/${routine.name}.ff`;
         const fileExists = await exists(filePath);
         if (fileExists) {
           await remove(filePath);
@@ -278,8 +494,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // Rename file if project is loaded
     if (state.isProjectLoaded && state.projectPath) {
       try {
-        const oldPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${oldName}.json`;
-        const newPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${newName}.json`;
+        const oldPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${oldName}.ff`;
+        const newPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${newName}.ff`;
         
         const oldFileExists = await exists(oldPath);
         if (oldFileExists) {
@@ -410,7 +626,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
     try {
       const routinesPath = `${state.projectPath}/src/main/deploy/FeatherFlow`;
-      const filePath = `${routinesPath}/${routine.name}.json`;
+      const filePath = `${routinesPath}/${routine.name}.ff`;
       
       // Ensure routines folder exists
       const folderExists = await exists(routinesPath);

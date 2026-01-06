@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { ChevronRight, Settings } from 'lucide-react';
 import { useProjectStore } from '@/store/ProjectStore';
 import { UnsavedChangesModal } from '@/components/UnsavedChangesModal';
+import { SnapPointsModal } from '@/app/studio/components/SnapPointsModal';
 
 interface HeaderProps {
     className?: string;
@@ -25,6 +26,7 @@ export default function Header({ className }: HeaderProps) {
 
     const [showModal, setShowModal] = useState(false);
     const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+    const [isSnapModalOpen, setIsSnapModalOpen] = useState(false);
 
     const handleNavigation = (path: string) => {
         if (pathname === '/studio') {
@@ -77,7 +79,7 @@ export default function Header({ className }: HeaderProps) {
                         </span>
                         <ChevronRight className="w-4 h-4 text-gray-400" />
                         <button
-                            onClick={() => handleNavigation('/command')}
+                            onClick={() => handleNavigation('/project')}
                             className="text-white hover:text-gray-300 transition-colors font-medium"
                         >
                             Auto
@@ -95,9 +97,13 @@ export default function Header({ className }: HeaderProps) {
                     {projectName}
                 </div> */}
 
-                <div>
-                    <Settings />
-                </div>
+                <button
+                    onClick={() => setIsSnapModalOpen(true)}
+                    className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+                    title="Snap Point Settings"
+                >
+                    <Settings className="w-5 h-5" />
+                </button>
             </header>
 
             <UnsavedChangesModal
@@ -105,6 +111,11 @@ export default function Header({ className }: HeaderProps) {
                 onSave={handleSave}
                 onDiscard={handleDiscard}
                 onCancel={handleCancel}
+            />
+
+            <SnapPointsModal 
+                isOpen={isSnapModalOpen} 
+                onClose={() => setIsSnapModalOpen(false)} 
             />
         </>
     );

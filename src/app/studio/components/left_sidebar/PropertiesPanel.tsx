@@ -3,6 +3,7 @@
 import { useStudioStore } from "@/store/StudioStore";
 import AnchorProperties from "./AnchorProperties";
 import ControlPointProperties from "./ControlPointProperties";
+import SnapPointProperties from "./SnapPointProperties";
 import { Eye } from "lucide-react";
 
 export default function PropertiesPanel() {
@@ -17,6 +18,7 @@ export default function PropertiesPanel() {
           <>
             {['anchor', 'handleOut', 'handleIn'].includes(selectedPoint.type) && <AnchorProperties />}
             {selectedPoint.type === 'control' && <ControlPointProperties />}
+            {selectedPoint.type === 'snapPoint' && <SnapPointProperties />}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center py-8 text-center">

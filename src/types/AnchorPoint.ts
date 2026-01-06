@@ -34,4 +34,9 @@ export interface AnchorPoint {
    * Optional label/name 
    */
   name: string;
-  }
+
+  /**
+   * Optional reference to a snap point ID if this anchor is snapped to a snap point
+   */
+  snapPointId?: string;
+}

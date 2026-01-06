@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback } from 'react';
 import { useStudioStore } from '@/store/StudioStore';
+import { useProjectStore } from '@/store/ProjectStore';
 import { canvasToInch } from '@/types';
 
 
@@ -29,6 +30,31 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
   const stopPanning = useStudioStore(state => state.stopPanning);
   const insertAnchorOnCurve = useStudioStore(state => state.insertAnchorOnCurve);
   const invokeTrajectoryComputation = useStudioStore(state => state.invokeTrajectoryComputation);
+  
+  const snapAnchorToPoint = useStudioStore(state => state.snapAnchorToPoint);
+  const unsnapAnchor = useStudioStore(state => state.unsnapAnchor);
+
+  const snapPoints = useProjectStore(state => state.snapPoints);
+  const snapEnabled = useProjectStore(state => state.snapEnabled);
+  const snapRadius = useProjectStore(state => state.snapRadius);
+  const syncAnchorsToSnapPoint = useProjectStore(state => state.syncAnchorsToSnapPoint);
+
+  // Helper function to find nearby snap point
+  const findNearbySnapPoint = useCallback((x: number, y: number) => {
+    if (!snapEnabled) return null;
+    // Don't do magnetic snapping if we're dragging a snap point
+    if (selectedPoint?.type === 'snapPoint') return null;
+    
+    for (const snapPoint of snapPoints) {
+      if (!snapPoint.enabled) continue;
+      
+      const distance = Math.hypot(x - snapPoint.position.x, y - snapPoint.position.y);
+      if (distance < snapRadius) {
+        return snapPoint;
+      }
+    }
+    return null;
+  }, [snapPoints, snapEnabled, snapRadius, selectedPoint]);
 
   const findClosestU = useCallback((x: number, y: number) => {
     let closestU = 0;
@@ -78,6 +104,21 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     }
     return false;
   }, [activeTool, anchorPoints, selectedPoint, setSelectedPoint, setIsDragging]);
+
+  const checkSnapPointInteraction = useCallback((x: number, y: number): boolean => {
+    if (activeTool !== 'anchorTool') return false;
+
+    // Check snap points - only block anchor interaction if snap point is unlocked
+    for (const snapPoint of snapPoints) {
+      const distance = Math.hypot(x - snapPoint.position.x, y - snapPoint.position.y);
+      if (distance < 5 && !snapPoint.locked) {
+        setSelectedPoint({ type: 'snapPoint', id: snapPoint.id });
+        setIsDragging(true);
+        return true;
+      }
+    }
+    return false;
+  }, [activeTool, snapPoints, setSelectedPoint, setIsDragging]);
 
   const checkAnchorInteraction = useCallback((x: number, y: number): boolean => {
     if (activeTool !== 'anchorTool') return false;
@@ -191,6 +232,9 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     const controlClicked = checkControlInteraction(x, y);
     if (controlClicked) return;
 
+    const snapPointClicked = checkSnapPointInteraction(x, y);
+    if (snapPointClicked) return;
+
     // Check curve interaction for inserting anchor points
     const curveClicked = checkCurveInteraction(x, y, e.shiftKey);
     if (curveClicked) return;
@@ -200,9 +244,9 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     if (pointAdded) return;
 
     //Start panning if clicking on empty space
-    setSelectedPoint(null); 
+    setSelectedPoint(null);
     startPanning({ x: e.clientX, y: e.clientY });
-  }, [canvasRef, viewport, checkHandleInteraction, checkAnchorInteraction, checkControlInteraction, checkCurveInteraction, handleAddPoint, startPanning, setSelectedPoint]);
+  }, [canvasRef, viewport, checkHandleInteraction, checkSnapPointInteraction, checkAnchorInteraction, checkControlInteraction, checkCurveInteraction, handleAddPoint, startPanning, setSelectedPoint]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const canvas = canvasRef.current;
@@ -221,21 +265,52 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
 
     if (isPanning) {
       updatePanning({ x: e.clientX, y: e.clientY });
+    } else if (isDragging && selectedPoint?.type === 'snapPoint') {
+      // Dragging a snap point - update position and sync anchors in real-time
+      const snapPointId = selectedPoint.id as string;
+      const snapPoint = snapPoints.find(sp => sp.id === snapPointId);
+      if (snapPoint && !snapPoint.locked) {
+        const x = inchPos.x;
+        const y = inchPos.y;
+        // Directly update snap point position
+        useProjectStore.setState((state) => ({
+          snapPoints: state.snapPoints.map(sp =>
+            sp.id === snapPointId ? { ...sp, position: { x, y } } : sp
+          )
+        }));
+        // Sync anchors to new position in real-time
+        syncAnchorsToSnapPoint(snapPointId);
+      }
     } else if (isDragging && selectedPoint) {
       const x = inchPos.x;
       const y = inchPos.y;
 
-      if (selectedPoint.type === 'anchor') {
-        updateAnchorPoint(selectedPoint.id, (current) => ({
-          ...current,
-          position: { x, y }
-        }));
-      } else if (selectedPoint.type === 'control') {
+      if (selectedPoint.type === 'anchor' && typeof selectedPoint.id === 'number') {
+        // Check for nearby snap point for magnetic snapping
+        const nearbySnapPoint = findNearbySnapPoint(x, y);
+        
+        if (nearbySnapPoint) {
+          // Snap to snap point
+          snapAnchorToPoint(selectedPoint.id, nearbySnapPoint.id, nearbySnapPoint.position);
+          
+        } else {
+          // Normal movement - remove snap if it exists
+          const anchor = anchorPoints[selectedPoint.id];
+          if (anchor?.snapPointId) {
+            unsnapAnchor(selectedPoint.id);
+          }
+          
+          updateAnchorPoint(selectedPoint.id, (current) => ({
+            ...current,
+            position: { x, y }
+          }));
+        }
+      } else if (selectedPoint.type === 'control' && typeof selectedPoint.id === 'number') {
         const newU = findClosestU(x, y);
         if (newU !== null) {
           updateControlPoint(selectedPoint.id, { u: newU });
         }
-      } else if (selectedPoint.type === 'handleOut') {
+      } else if (selectedPoint.type === 'handleOut' && typeof selectedPoint.id === 'number') {
         const anchor = anchorPoints[selectedPoint.id];
         if (anchor) {
           const dx = x - anchor.position.x;
@@ -252,7 +327,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
             }
           }));
         }
-      } else if (selectedPoint.type === 'handleIn') {
+      } else if (selectedPoint.type === 'handleIn' && typeof selectedPoint.id === 'number') {
         const anchor = anchorPoints[selectedPoint.id];
         if (anchor) {
           const dx = x - anchor.position.x;
@@ -271,14 +346,26 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
         }
       }
     }
-  }, [canvasRef, viewport, isDragging, selectedPoint, setCursorPosition, updateAnchorPoint, updateControlPoint, findClosestU, anchorPoints, isPanning, updatePanning]);
-  const handleMouseUp = useCallback(() => {
-    if(isDragging){
-      invokeTrajectoryComputation();
-    }
+  }, [canvasRef, viewport, isDragging, selectedPoint, setCursorPosition, updateAnchorPoint, updateControlPoint, findClosestU, anchorPoints, isPanning, updatePanning, snapPoints, findNearbySnapPoint, snapAnchorToPoint, unsnapAnchor]);
+  const handleMouseUp = useCallback(async () => {
+    // Capture the state before clearing
+    const wasDrawingSnapPoint = isDragging && selectedPoint?.type === 'snapPoint';
+    
+    // Clear dragging states FIRST
     setIsDragging(false);
     stopPanning();
-  }, [setIsDragging, stopPanning, invokeTrajectoryComputation, isDragging]);
+    
+    // Then handle post-drag actions
+    if(isDragging && selectedPoint?.type !== 'snapPoint'){
+      invokeTrajectoryComputation();
+    }
+    
+    // If we were dragging a snap point, just save the config (anchors already synced during drag)
+    if (wasDrawingSnapPoint) {
+      const saveConfig = useProjectStore.getState().saveConfig;
+      await saveConfig();
+    }
+  }, [setIsDragging, stopPanning, invokeTrajectoryComputation, isDragging, selectedPoint]);
 
   // Keyboard event handler for deleting points
   useEffect(() => {
@@ -286,9 +373,9 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
       if ((e.key === 'Delete' || e.key === 'Backspace') && e.shiftKey && selectedPoint) {
         e.preventDefault();
 
-        if (selectedPoint.type === 'anchor' && anchorPoints.length > 2) {
+        if (selectedPoint.type === 'anchor' && typeof selectedPoint.id === 'number' && anchorPoints.length > 2) {
           deleteAnchorPoint(selectedPoint.id);
-        } else if (selectedPoint.type === 'control') {
+        } else if (selectedPoint.type === 'control' && typeof selectedPoint.id === 'number') {
           deleteControlPoint(selectedPoint.id);
         }
 
