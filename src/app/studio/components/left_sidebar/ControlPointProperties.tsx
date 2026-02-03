@@ -128,13 +128,19 @@ export default function ControlPointProperties() {
                   <Trash className='w-3 h-3'/>
                 </button>
               </label>
-              <input
-                type="text"
-                value={attr.action}
-                onChange={(e) => updateAttribute(point.id, attrIndex, { action: e.target.value })}
-                placeholder="e.g., intake, shoot, deploy"
-                className="w-full px-2 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-blue-500"
-              />
+              <button 
+                onClick={(e) => updateAttribute(point.id, attrIndex, { stopping: !attr.stopping })} 
+                className={`
+                  w-full px-2 py-2 rounded text-sm 
+                  focus:outline-none focus:border-blue-500 
+                  ${attr.stopping 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-800 border border-gray-700 text-gray-100'
+                  }
+                `}
+              >
+                {attr.stopping ? 'Stopping Command' : 'Non-Stopping Command'}
+              </button>
             </>
           )}
 
@@ -222,7 +228,7 @@ export default function ControlPointProperties() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      addAttribute(point.id, { type: 'command', action: '' });
+                      addAttribute(point.id, { type: 'command', stopping: false});
                       setShowAttributeMenu(false);
                     }}
                     className="w-full px-3 py-2 bg-gray-800 text-gray-200 text-sm rounded hover:bg-gray-700 transition-colors text-left"

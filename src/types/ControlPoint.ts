@@ -5,7 +5,7 @@
 export type ControlPointAttribute =
   | { type: 'stop'; duration: number }          // Stop for a duration (seconds)
   | { type: 'rotate'; heading: number }         // Set heading/rotation (degrees)
-  | { type: 'command'; action: string }         // Execute a custom command/action
+  | { type: 'command'; stopping: boolean }         // Execute a custom command/action
   | { type: 'loop'; bounces: number; targetLoopId: number | null }  // Loop back to a target point
 
 /**

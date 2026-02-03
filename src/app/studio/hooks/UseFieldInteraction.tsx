@@ -3,7 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { useStudioStore } from '@/store/StudioStore';
 import { useProjectStore } from '@/store/ProjectStore';
-import { canvasToInch } from '@/types';
+import { canvasToInch } from '@/config/config';
 
 
 export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
@@ -42,6 +42,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
   // Helper function to find nearby snap point
   const findNearbySnapPoint = useCallback((x: number, y: number) => {
     if (!snapEnabled) return null;
+    
     // Don't do magnetic snapping if we're dragging a snap point
     if (selectedPoint?.type === 'snapPoint') return null;
     
@@ -167,6 +168,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
 
     // Insert anchor point on curve
     insertAnchorOnCurve(segmentIndex, t);
+
     // Select the newly inserted anchor point (it will be at segmentIndex + 1)
     setSelectedPoint({ type: 'anchor', id: segmentIndex + 1 });
     return true;
@@ -184,11 +186,13 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
         isCurved: true,
         handlesAligned: true
       });
+
       // Select the newly added anchor point
       setSelectedPoint({ type: 'anchor', id: newAnchorIndex });
       return true;
     } else if (activeTool === 'controlTool') {
       const u = findClosestU(x, y);
+
       if (u !== null) {
         const newControlId = Date.now();
         addControlPoint({
@@ -197,6 +201,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
           color: 'blue',
           attributes: []
         });
+
         // Select the newly added control point
         setSelectedPoint({ type: 'control', id: newControlId });
         return true;
@@ -347,6 +352,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
       }
     }
   }, [canvasRef, viewport, isDragging, selectedPoint, setCursorPosition, updateAnchorPoint, updateControlPoint, findClosestU, anchorPoints, isPanning, updatePanning, snapPoints, findNearbySnapPoint, snapAnchorToPoint, unsnapAnchor]);
+  
   const handleMouseUp = useCallback(async () => {
     // Capture the state before clearing
     const wasDrawingSnapPoint = isDragging && selectedPoint?.type === 'snapPoint';

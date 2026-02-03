@@ -6,7 +6,7 @@ import { useStudioStore } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
 import { useFieldDrawing } from '../hooks/UseFieldDrawing';
 import { useFieldInteraction } from '../hooks/UseFieldInteraction';
-import { inchToCanvas } from '@/types';
+import { inchToCanvas } from '@/config/config';
 
 export function Field() {
   const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -2,8 +2,8 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { AnchorPoint, AutoRoutine, ControlPoint } from '@/types';
-import { FIELD_CONFIG } from '@/config/config';
-import { inchToCanvas, Vector2 } from '@/types';
+import { FIELD_CONFIG, inchToCanvas } from '@/config/config';
+import { Vector2 } from '@/types';
 import { Viewport } from '@/store/StudioStore';
 
 // Drawing functions adapted from UseFieldDrawing.tsx

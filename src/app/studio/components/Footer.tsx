@@ -1,5 +1,6 @@
 "use client";
 
+import { inchToCanvas } from "@/config/config";
 import { useStudioStore } from "@/store/StudioStore";
 
 export default function Footer() {
@@ -30,10 +31,12 @@ export default function Footer() {
 		return "None";
 	};
 
+	
+
 	return (
 		<div className="grid grid-cols-3 px-6 py-3 bg-gray-800 border-t border-gray-700 text-sm font-medium">
 				<div className="flex items-center gap-6 text-gray-300">
-					<span>Cursor: ({cursorPosition.x.toFixed(1)}, {cursorPosition.y.toFixed(1)}) in</span>
+					<span>Cursor: ({cursorPosition.x.toFixed(2)}, {cursorPosition.y.toFixed(2)}) in</span>
 					<span>Time: {time.toFixed(2)}s</span>
 					<button
 						onClick={() => setShowingVelocity(!showingVelocity)}

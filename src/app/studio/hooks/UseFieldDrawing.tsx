@@ -1,7 +1,8 @@
 import { useEffect, useRef, RefObject, useCallback } from 'react';
 import { SelectedPoint, useStudioStore, Viewport } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
-import { AnchorPoint, ControlPoint, inchToCanvas, Vector2, SnapPoint } from '@/types';
+import { AnchorPoint, ControlPoint, Vector2, SnapPoint } from '@/types';
+import { inchToCanvas } from '@/config/config';
 import { useProjectStore } from '@/store/ProjectStore';
 
 // Drawing functions

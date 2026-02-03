@@ -5,8 +5,8 @@ mod vector2;
 use bezier_curve::BezierCurve;
 use types::{AnchorPoint, PathPoint, Vector2, TrajectoryResult};
 
-const MAX_VELOCITY: f64 = 118.0; 
-const MAX_ACCELERATION: f64 =  118.0;
+const MAX_VELOCITY: f64 = 207.614173; 
+const MAX_ACCELERATION: f64 =  207.614173;
 const MAX_LATERAL_ACCELERATION: f64 = 79.0;
 const OVERSAMPLING_FACTOR: usize = 100;
 const SAMPLING_DISTANCE: f64 = 1.0; 

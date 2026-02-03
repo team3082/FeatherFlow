@@ -1,4 +1,4 @@
-# 🪶 FeatherFlow
+# FeatherFlow
 
 > **FRC Autonomous Path Planning Studio**
 
@@ -8,44 +8,44 @@
 
 FeatherFlow is a modern desktop application for creating and visualizing autonomous robot paths for FIRST Robotics Competition (FRC) teams. Built with Next.js and Tauri, it provides an intuitive interface for designing complex robot trajectories using Bezier curves and behavioral control points.
 
-## ✨ Key Features
+## Key Features
 
-### 🎨 **Interactive Path Studio**
+### Interactive Path Studio
 - **Visual Canvas Editor**: Drag-and-drop path creation with real-time field visualization
 - **Zoom & Pan Controls**: Navigate large field layouts with smooth zooming and panning
 - **2025 Reefscape Field**: Pre-configured for the current FRC game field dimensions
 - **Real-time Path Preview**: Instant visual feedback as you build paths
 
-### 🎯 **Dual-Point Architecture**
+### Dual-Point Architecture
 - **Anchor Points**: Define the geometric path your robot follows using Bezier curves
 - **Control Points**: Add behavioral commands at specific positions along the path:
   - **Rotate Points**: Specify robot heading changes
   - **Stop Points**: Define controlled stops with duration
   - **Command Points**: Execute custom robot actions
 
-### 🛠️ **Advanced Editing Tools**
+### Advanced Editing Tools
 - **Curve Handles**: Intuitive Bezier curve manipulation with aligned handles
 - **Point Insertion**: Click on curves to add new anchor points
 - **Properties Panel**: Detailed editing of point positions and attributes
 - **Point Lists**: Organized views of all anchor and control points
 
-### � **Project Management**
-- **Save/Load Projects**: Manage multiple autonomous routines
-- **Path Previews**: Visual thumbnails for quick project selection
-- **Duplicate & Edit**: Clone existing paths for rapid iteration
+### Project Management
+**Save/Load Projects**: Manage multiple autonomous routines
+**Path Previews**: Visual thumbnails for quick project selection
+**Duplicate & Edit**: Clone existing paths for rapid iteration
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ```
 FeatherFlow Architecture
-├── 🎨 Frontend (Next.js + TypeScript + Tailwind CSS)
+├── Frontend (Next.js + TypeScript + Tailwind CSS)
 │   ├── Landing Page
 │   ├── Project Browser
 │   └── Visual Path Studio
-├── ⚡ Desktop App (Tauri + Rust)
+├── Desktop App (Tauri + Rust)
 │   ├── Native Performance
 │   └── Cross-Platform Support
-└── 🧮 Core Mathematics
+└── Core Mathematics
     ├── Bezier Curve Engine
     ├── Coordinate Conversion
     └── Path Optmization (In Rust)
@@ -59,7 +59,7 @@ FeatherFlow Architecture
 - **`Vector2`**: 2D mathematics for precise field positioning
 - **Canvas Coordinate System**: Automatic conversion between pixels and field inches
 
-## 🎯 Perfect for FRC Teams
+## Perfect for FRC Teams
 
 FeatherFlow is designed specifically for FRC teams who need:
 
@@ -68,11 +68,11 @@ FeatherFlow is designed specifically for FRC teams who need:
 - **Visual Planning**: See your robot's path before deployment
 - **Team Collaboration**: Share and iterate on path designs
 
-## 🚧 Current Development Status
+## Current Development Status
 
 FeatherFlow is actively being developed with core functionality in place:
 
-### ✅ **Implemented Features**
+### Implemented Features
 - Interactive field canvas with 2025 Reefscape background
 - Anchor point creation and Bezier curve drawing
 - Control point system for behavioral commands
@@ -81,14 +81,14 @@ FeatherFlow is actively being developed with core functionality in place:
 - Project management with save/load capabilities
 - Real-time path visualization
 
-### 🔄 **In Development**
+### In Development
 - Path export to wplib
 - Advanced control point behaviors
 - Timeline-based path sequencing
 - Physics simulation and validation
 - Multi-path autonomous routines
 
-## 🛠️ Development Setup
+## Development Setup
 
 ### Prerequisites
 - Node.js 18+
@@ -120,7 +120,7 @@ npm run tauri dev
 - `npm run tauri build` - Build desktop application
 - `npm run lint` - Run ESLint
 
-## 🤝 Contributing
+## Contributing
 
 FeatherFlow welcomes contributions from FRC teams and the robotics community!
 
@@ -130,7 +130,7 @@ FeatherFlow welcomes contributions from FRC teams and the robotics community!
 - Test path mathematics thoroughly
 - Document new features and behaviors
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
