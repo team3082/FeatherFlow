@@ -179,11 +179,51 @@ export default function ControlPointProperties() {
               />
             </>
           )}
+
+          {attr.type === 'motionLimits' && (
+            <>
+              <label className="text-xs text-white mb-1.5 flex items-center justify-between">
+                <span>Motion Limits</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeAttribute(point.id, attrIndex);
+                  }}
+                  className="text-blue-500 hover:text-blue-400 text-sm px-1"
+                  title="Remove attribute"
+                >
+                  <Trash className='w-3 h-3'/>
+                </button>
+              </label>
+              <label className="text-xs text-gray-300 mb-1.5 mt-3 flex items-center justify-between">
+                <span>Velocity (inches Per Second)</span>
+              </label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                value={attr.velocity}
+                onChange={(e) => updateAttribute(point.id, attrIndex, { velocity: parseInt(e.target.value || '1') })}
+                className="w-full px-2 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-blue-500"
+              />
+              <label className="text-xs text-gray-300 mb-1.5 mt-3 flex items-center justify-between">
+                <span>Acceleration (inches Per Second)</span>
+              </label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                value={attr.acceleration}
+                onChange={(e) => updateAttribute(point.id, attrIndex, { acceleration: parseInt(e.target.value || '1') })}
+                className="w-full px-2 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-blue-500"
+              />
+            </>
+          )}
         </div>
       ))}
 
       {/* Add Attribute Button */}
-      {point.attributes.length < 4 && (
+      {point.attributes.length < 5 && (
         <div className="pt-2 border-t border-gray-700">
           <button
             onClick={(e) => {
@@ -246,6 +286,18 @@ export default function ControlPointProperties() {
                     className="w-full px-3 py-2 bg-gray-800 text-gray-200 text-sm rounded hover:bg-gray-700 transition-colors text-left"
                   >
                     Loop
+                  </button>
+                )}
+                 {!point.attributes.some(a => a.type === 'motionLimits') && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addAttribute(point.id, { type: 'motionLimits', velocity: 120, acceleration: 120});
+                      setShowAttributeMenu(false);
+                    }}
+                    className="w-full px-3 py-2 bg-gray-800 text-gray-200 text-sm rounded hover:bg-gray-700 transition-colors text-left"
+                  >
+                    Motion Limits
                   </button>
                 )}
               </div>

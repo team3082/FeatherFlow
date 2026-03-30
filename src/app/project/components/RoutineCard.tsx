@@ -46,7 +46,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
     <div
       onMouseEnter={() => setHoveredCard(index)}
       onMouseLeave={() => setHoveredCard(null)}
-      className="bg-gray-900/20 backdrop-blur border border-gray-800/30 rounded-2xl overflow-hidden hover:border-blue-500/30 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 group hover:-translate-y-1"
+      className="bg-gray-900/20 backdrop-blur border border-gray-800/30 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl group hover:-translate-y-1"
     >
       {/* Preview Canvas */}
       <div className="aspect-[3/2] bg-[#0e111b] relative overflow-hidden flex items-center justify-center">
@@ -71,7 +71,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
                 className="w-full text-lg font-bold text-gray-100 bg-gray-800 border border-blue-500 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             ) : (
-              <h3 className="text-lg font-bold text-gray-100 mb-1.5 group-hover:text-blue-400 transition-colors line-clamp-1">
+              <h3 className="text-lg font-bold text-gray-100 mb-1.5 transition-colors line-clamp-1">
                 {routine.name}
               </h3>
             )}
@@ -172,7 +172,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
                       onDelete(routine.id);
                       setOpenMenuId(null);
                     }}
-                    className="w-full px-4 py-2.5 text-left text-sm text-blue-400 hover:bg-blue-500/10 hover:text-blue-300 transition-colors flex items-center gap-3"
+                    className="w-full px-4 py-2.5 text-left text-sm text-blue-400 hover:bg-gray-700 hover:text-blue-300 transition-colors flex items-center gap-3"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

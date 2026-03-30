@@ -7,6 +7,7 @@ export type ControlPointAttribute =
   | { type: 'rotate'; heading: number }         // Set heading/rotation (degrees)
   | { type: 'command'; stopping: boolean }         // Execute a custom command/action
   | { type: 'loop'; bounces: number; targetLoopId: number | null }  // Loop back to a target point
+  | { type: 'motionLimits'; velocity : number, acceleration : number}
 
 /**
  * Represents a single control point along the spline with composable attributes.

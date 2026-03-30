@@ -15,6 +15,7 @@ export default function Home() {
   };
 
   const handleLoadLast = () => {
+    // I am still lazy and do not want to implement this right ow
     console.log("IM LAZY AND DONT WANT TO IMPLEMENT THIS NOW");
     router.push('/project?from=landing');
   };
