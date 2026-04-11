@@ -387,7 +387,10 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   invokeTrajectoryComputation: () => {
     const state = get();
-    invoke<TrajectoryResult>("compute_travel_time", { anchors: state.anchorPoints })
+    invoke<TrajectoryResult>("compute_travel_time", {
+      anchors: state.anchorPoints,
+      controlPoints: state.controlPoints
+    })
       .then(result => {
         set({ trajectory: result });
         set({ trajectoryTime: result.totalTime });

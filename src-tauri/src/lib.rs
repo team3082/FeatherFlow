@@ -3,51 +3,34 @@ mod types;
 mod vector2;
 
 use bezier_curve::BezierCurve;
-use types::{AnchorPoint, PathPoint, Vector2, TrajectoryResult};
+use types::{AnchorPoint, ControlPoint, ControlPointAttribute, PathPoint, Vector2, TrajectoryResult};
 
-const MAX_VELOCITY: f64 = 207.614173; 
-const MAX_ACCELERATION: f64 =  207.614173;
-const MAX_LATERAL_ACCELERATION: f64 = 79.0;
+const MAX_TRANSLATIONAL_VELOCITY: f64 = 110.0;
+const MAX_ROTATIONAL_VELOCITY: f64 = 3.0;
+const MAX_WHEEL_SPEED: f64 = 120.0;
+const MAX_ACCELERATION: f64 = 110.0;
+const MAX_LATERAL_ACCELERATION: f64 = 110.0;
+const SWERVE_RADIUS: f64 = 14.0;
 const OVERSAMPLING_FACTOR: usize = 100;
-const SAMPLING_DISTANCE: f64 = 1.0; 
+const SAMPLING_DISTANCE: f64 = 1.0;
+const EPSILON: f64 = 1e-9;
+
+#[derive(Debug, Clone)]
+struct ActionDescriptor {
+    t: f64,
+    kind: ActionKind,
+}
+
+#[derive(Debug, Clone)]
+enum ActionKind {
+    Stop { duration: f64 },
+    Rotate { heading: f64 },
+    Command { stopping: bool },
+}
 
 
 #[tauri::command]
-fn compute_travel_time(anchors: Vec<AnchorPoint>) -> TrajectoryResult {
-    let mut segments = vec![Vec::new()];
-    let mut index: usize = 0;
-
-    for anchor in anchors {
-        segments[index].push(anchor.clone());
-        
-        if !anchor.is_curved {
-            segments.push(Vec::new());
-            index += 1;
-            segments[index].push(anchor);
-        }
-    }
-
-    let mut total_path_points: Vec<PathPoint> = Vec::new();
-    let mut cumulative_time: f64 = 0.0;
-
-    for segment in segments {
-        let segment_result = compute_travel_time_for_anchors(segment);
-
-        for mut point in segment_result.path_points {
-            point.time += cumulative_time;
-            total_path_points.push(point);
-        }
-
-        cumulative_time += segment_result.total_time;
-    }
-
-    TrajectoryResult {
-        total_time: cumulative_time,
-        path_points: total_path_points,
-    }
-}
-
-fn compute_travel_time_for_anchors(anchors: Vec<AnchorPoint>) -> TrajectoryResult {
+fn compute_travel_time(anchors: Vec<AnchorPoint>, control_points: Option<Vec<ControlPoint>>) -> TrajectoryResult {
     if anchors.len() < 2 {
         return TrajectoryResult {
             total_time: 0.0,
@@ -55,82 +38,418 @@ fn compute_travel_time_for_anchors(anchors: Vec<AnchorPoint>) -> TrajectoryResul
         };
     }
 
-    let mut path_points = generate_path_points(&anchors);
-    if path_points.is_empty() {
+    let path_points = generate_path_points(&anchors);
+    if path_points.len() < 2 {
         return TrajectoryResult {
             total_time: 0.0,
             path_points: Vec::new(),
         };
     }
 
-    // --- Calculate scalar speed profile ---
-    let mut scalar_velocities = Vec::with_capacity(path_points.len());
+    let actions = parse_actions(control_points.unwrap_or_default(), anchors.len().saturating_sub(1));
+    let split_values = collect_split_values(&actions);
+    let segments = split_path(&path_points, &split_values);
+    let rotate_by_dist = build_rotate_keyframes_by_distance(&path_points, &actions, false);
 
-    // 1. Set velocity limits based on path curvature
-    for point in &path_points {
-        let v_limit = if point.curvature.abs() > 1e-9 {
-            (MAX_LATERAL_ACCELERATION / point.curvature.abs()).sqrt()
-        } else {
-            MAX_VELOCITY
-        };
-        scalar_velocities.push(MAX_VELOCITY.min(v_limit));
+    let mut all_points: Vec<PathPoint> = Vec::new();
+    let mut cumulative_time = 0.0;
+    let mut segment_dist_offset = 0.0;
+
+    for (segment_idx, segment) in segments.iter().enumerate() {
+        if segment.len() < 2 {
+            continue;
+        }
+
+        let target_headings = build_target_headings(segment, &rotate_by_dist, segment_dist_offset);
+        let mut profiled_segment = profile_segment(segment, &target_headings);
+        if profiled_segment.is_empty() {
+            continue;
+        }
+
+        for point in &mut profiled_segment {
+            point.time += cumulative_time;
+        }
+
+        if let Some(last) = all_points.last() {
+            if let Some(first) = profiled_segment.first() {
+                let d = ((last.x - first.x).powi(2) + (last.y - first.y).powi(2)).sqrt();
+                if d < EPSILON {
+                    profiled_segment.remove(0);
+                }
+            }
+        }
+
+        if let Some(last) = profiled_segment.last() {
+            cumulative_time = last.time;
+        }
+
+        all_points.extend(profiled_segment);
+
+        if segment_idx < split_values.len() {
+            let split_t = split_values[segment_idx];
+            let stop_duration = stop_duration_at_t(&actions, split_t);
+            if stop_duration > EPSILON {
+                if let Some(last_point) = all_points.last().cloned() {
+                    let mut hold = last_point;
+                    hold.time += stop_duration;
+                    hold.velocity = Vector2 { x: 0.0, y: 0.0 };
+                    hold.acceleration = 0.0;
+                    hold.rotational_velocity = 0.0;
+                    all_points.push(hold);
+                    cumulative_time += stop_duration;
+                }
+            }
+        }
+
+        segment_dist_offset += segment
+            .windows(2)
+            .map(|w| {
+                let dx = w[1].x - w[0].x;
+                let dy = w[1].y - w[0].y;
+                (dx * dx + dy * dy).sqrt()
+            })
+            .sum::<f64>();
     }
 
-    // 2. Forward pass (enforce acceleration limits)
-    scalar_velocities[0] = 0.0;
-    for i in 0..path_points.len() - 1 {
-        let v_now = scalar_velocities[i];
-        let ds = path_points[i + 1].s - path_points[i].s;
-        let v_possible = (v_now * v_now + 2.0 * MAX_ACCELERATION * ds).sqrt();
-        scalar_velocities[i + 1] = scalar_velocities[i + 1].min(v_possible);
-    }
-
-    // 3. Backward pass (enforce deceleration limits)
-    let last = path_points.len() - 1;
-    scalar_velocities[last] = 0.0;
-    for i in (0..last).rev() {
-        let v_next = scalar_velocities[i + 1];
-        let ds = path_points[i + 1].s - path_points[i].s;
-        let v_possible = (v_next * v_next + 2.0 * MAX_ACCELERATION * ds).sqrt();
-        scalar_velocities[i] = scalar_velocities[i].min(v_possible);
-    }
-
-    // 4. Time integration & convert to 2D velocity vectors
-    path_points[0].time = 0.0;
-    path_points[0].velocity = Vector2 { x: 0.0, y: 0.0 };
-
-    for i in 0..path_points.len() - 1 {
-        let v_i = scalar_velocities[i];
-        let v_ip1 = scalar_velocities[i + 1];
-        let ds = path_points[i + 1].s - path_points[i].s;
-
-        // Integrate time
-        let dt = if (v_i + v_ip1).abs() > 1e-9 {
-            2.0 * ds / (v_i + v_ip1)
-        } else {
-            0.0
-        };
-        path_points[i + 1].time = path_points[i].time + dt;
-
-        // Calculate tangent vector and set velocity
-        let p1 = Vector2 { x: path_points[i].x, y: path_points[i].y };
-        let p2 = Vector2 { x: path_points[i + 1].x, y: path_points[i + 1].y };
-        let tangent = (p2 - p1).normalize();
-        path_points[i].velocity = tangent * v_i;
-    }
-
-    // Set last point velocity to zero
-    if let Some(last_point) = path_points.last_mut() {
-        last_point.velocity = Vector2 { x: 0.0, y: 0.0 };
-    }
-
-    let total_time = path_points.last().map_or(0.0, |p| p.time);
-    println!("Total computed travel time: {:.3} seconds", total_time);
-
+    let total_time = all_points.last().map_or(0.0, |p| p.time);
     TrajectoryResult {
         total_time,
-        path_points,
+        path_points: all_points,
     }
+}
+
+fn parse_actions(control_points: Vec<ControlPoint>, curve_count: usize) -> Vec<ActionDescriptor> {
+    let mut actions = Vec::new();
+    let denominator = curve_count.max(1) as f64;
+
+    for cp in control_points {
+        let global_t = if cp.u <= 1.0 {
+            cp.u.clamp(0.0, 1.0)
+        } else {
+            let curve_index = cp.u.floor();
+            let local_t = cp.u - curve_index;
+            ((curve_index + local_t) / denominator).clamp(0.0, 1.0)
+        };
+
+        for attribute in cp.attributes {
+            match attribute {
+                ControlPointAttribute::Stop { duration } => {
+                    actions.push(ActionDescriptor {
+                        t: global_t,
+                        kind: ActionKind::Stop { duration: duration.max(0.0) },
+                    });
+                }
+                ControlPointAttribute::Rotate { heading } => {
+                    actions.push(ActionDescriptor {
+                        t: global_t,
+                        kind: ActionKind::Rotate { heading },
+                    });
+                }
+                ControlPointAttribute::Command { stopping } => {
+                    actions.push(ActionDescriptor {
+                        t: global_t,
+                        kind: ActionKind::Command { stopping },
+                    });
+                }
+                ControlPointAttribute::Loop { .. } => {}
+                ControlPointAttribute::MotionLimits { .. } => {}
+            }
+        }
+    }
+
+    actions.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
+    actions
+}
+
+fn collect_split_values(actions: &[ActionDescriptor]) -> Vec<f64> {
+    let mut splits = Vec::new();
+
+    for action in actions {
+        match action.kind {
+            ActionKind::Stop { .. } => splits.push(action.t),
+            ActionKind::Command { stopping } if stopping => splits.push(action.t),
+            _ => {}
+        }
+    }
+
+    splits.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    splits.dedup_by(|a, b| (*a - *b).abs() < EPSILON);
+    splits
+}
+
+fn stop_duration_at_t(actions: &[ActionDescriptor], t: f64) -> f64 {
+    actions
+        .iter()
+        .filter_map(|action| match action.kind {
+            ActionKind::Stop { duration } if (action.t - t).abs() < 1e-6 => Some(duration),
+            _ => None,
+        })
+        .sum::<f64>()
+}
+
+fn split_path(path: &[PathPoint], split_values: &[f64]) -> Vec<Vec<PathPoint>> {
+    if path.len() < 2 {
+        return Vec::new();
+    }
+
+    if split_values.is_empty() {
+        return vec![path.to_vec()];
+    }
+
+    let n = path.len();
+    let mut segments: Vec<Vec<PathPoint>> = Vec::new();
+    let mut last_t = 0.0;
+
+    for t in split_values {
+        let t = t.clamp(0.0, 1.0);
+        if t <= last_t + EPSILON {
+            continue;
+        }
+
+        let start_index = (last_t * (n - 1) as f64).floor() as usize;
+        let end_index = ((t * (n - 1) as f64).ceil() as usize).min(n - 1);
+        if end_index > start_index {
+            segments.push(path[start_index..=end_index].to_vec());
+        }
+        last_t = t;
+    }
+
+    if last_t < 1.0 - EPSILON {
+        let start_index = (last_t * (n - 1) as f64).floor() as usize;
+        if start_index < n - 1 {
+            segments.push(path[start_index..n].to_vec());
+        }
+    }
+
+    if segments.is_empty() {
+        segments.push(path.to_vec());
+    }
+
+    segments
+}
+
+fn build_rotate_keyframes_by_distance(
+    full_path: &[PathPoint],
+    actions: &[ActionDescriptor],
+    flipped: bool,
+) -> Vec<(f64, f64)> {
+    if full_path.len() < 2 {
+        return Vec::new();
+    }
+
+    let mut keyframes_t_heading: Vec<(f64, f64)> = actions
+        .iter()
+        .filter_map(|action| match action.kind {
+            ActionKind::Rotate { heading } => {
+                let radians = if !flipped {
+                    (heading + 90.0).to_radians()
+                } else {
+                    ((360.0 - (heading + 90.0)) + 180.0).to_radians()
+                };
+                Some((action.t.clamp(0.0, 1.0), radians))
+            }
+            _ => None,
+        })
+        .collect();
+
+    keyframes_t_heading.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    if keyframes_t_heading.is_empty() {
+        return Vec::new();
+    }
+
+    let full_dist: Vec<f64> = full_path.iter().map(|p| p.s).collect();
+    let n = full_path.len();
+
+    keyframes_t_heading
+        .into_iter()
+        .map(|(t, heading)| {
+            let point_index = t * (n - 1) as f64;
+            let lo = point_index.floor() as usize;
+            let hi = (lo + 1).min(n - 1);
+            let frac = point_index - lo as f64;
+            let dist = full_dist[lo] + frac * (full_dist[hi] - full_dist[lo]);
+            (dist, heading)
+        })
+        .collect()
+}
+
+fn build_target_headings(segment: &[PathPoint], rotate_by_dist: &[(f64, f64)], segment_dist_offset: f64) -> Vec<f64> {
+    if segment.is_empty() {
+        return Vec::new();
+    }
+
+    if rotate_by_dist.is_empty() {
+        return vec![0.0; segment.len()];
+    }
+
+    let mut seg_dist = vec![0.0; segment.len()];
+    for i in 1..segment.len() {
+        let dx = segment[i].x - segment[i - 1].x;
+        let dy = segment[i].y - segment[i - 1].y;
+        seg_dist[i] = seg_dist[i - 1] + (dx * dx + dy * dy).sqrt();
+    }
+
+    seg_dist
+        .into_iter()
+        .map(|d| interpolate_heading_by_distance(rotate_by_dist, segment_dist_offset + d))
+        .collect()
+}
+
+fn interpolate_heading_by_distance(rotate_by_dist: &[(f64, f64)], d: f64) -> f64 {
+    if d <= rotate_by_dist[0].0 {
+        return rotate_by_dist[0].1;
+    }
+
+    let last = rotate_by_dist[rotate_by_dist.len() - 1];
+    if d >= last.0 {
+        return last.1;
+    }
+
+    for k in 0..rotate_by_dist.len() - 1 {
+        let (prev_d, prev_h) = rotate_by_dist[k];
+        let (next_d, next_h) = rotate_by_dist[k + 1];
+        if prev_d <= d && d < next_d {
+            let span = next_d - prev_d;
+            let alpha = if span > EPSILON { (d - prev_d) / span } else { 0.0 };
+            let mut delta = next_h - prev_h;
+            while delta > std::f64::consts::PI {
+                delta -= 2.0 * std::f64::consts::PI;
+            }
+            while delta < -std::f64::consts::PI {
+                delta += 2.0 * std::f64::consts::PI;
+            }
+            return prev_h + alpha * delta;
+        }
+    }
+
+    last.1
+}
+
+fn profile_segment(segment: &[PathPoint], target_headings: &[f64]) -> Vec<PathPoint> {
+    if segment.len() < 2 {
+        return Vec::new();
+    }
+
+    let n = segment.len();
+    let mut points: Vec<PathPoint> = segment
+        .iter()
+        .map(|p| PathPoint {
+            x: p.x,
+            y: p.y,
+            s: p.s,
+            curvature: p.curvature,
+            velocity: Vector2 { x: 0.0, y: 0.0 },
+            acceleration: 0.0,
+            time: 0.0,
+            heading: 0.0,
+            rotational_velocity: 0.0,
+        })
+        .collect();
+
+    let mut distances = vec![0.0; n];
+    for i in 1..n {
+        let dx = points[i].x - points[i - 1].x;
+        let dy = points[i].y - points[i - 1].y;
+        distances[i] = distances[i - 1] + (dx * dx + dy * dy).sqrt();
+    }
+
+    let mut headings = if target_headings.len() == n {
+        target_headings.to_vec()
+    } else {
+        vec![0.0; n]
+    };
+
+    for i in 1..n {
+        let mut delta = headings[i] - headings[i - 1];
+        while delta > std::f64::consts::PI {
+            delta -= 2.0 * std::f64::consts::PI;
+        }
+        while delta < -std::f64::consts::PI {
+            delta += 2.0 * std::f64::consts::PI;
+        }
+        headings[i] = headings[i - 1] + delta;
+    }
+
+    let mut dtheta = vec![0.0; n];
+    for i in 1..n {
+        dtheta[i] = headings[i] - headings[i - 1];
+    }
+
+    let mut velocities = vec![MAX_TRANSLATIONAL_VELOCITY; n];
+
+    for i in 1..n {
+        let ds = distances[i] - distances[i - 1];
+        if ds <= EPSILON {
+            continue;
+        }
+
+        let rot_density = (dtheta[i].abs() / ds) * SWERVE_RADIUS;
+        let v_wheel = MAX_WHEEL_SPEED / (1.0 + rot_density);
+        velocities[i] = velocities[i].min(v_wheel);
+
+        if dtheta[i].abs() > EPSILON {
+            let v_rot = MAX_ROTATIONAL_VELOCITY * ds / dtheta[i].abs();
+            velocities[i] = velocities[i].min(v_rot);
+        }
+    }
+
+    for i in 0..n {
+        let k = points[i].curvature;
+        if k.abs() > EPSILON {
+            let v_lat = (MAX_LATERAL_ACCELERATION / k.abs()).sqrt();
+            velocities[i] = velocities[i].min(v_lat);
+        }
+    }
+
+    velocities[0] = 0.0;
+    for i in 1..n {
+        let ds = distances[i] - distances[i - 1];
+        let v_accel = (velocities[i - 1] * velocities[i - 1] + 2.0 * MAX_ACCELERATION * ds).sqrt();
+        velocities[i] = velocities[i].min(v_accel);
+    }
+
+    velocities[n - 1] = 0.0;
+    for i in (0..n - 1).rev() {
+        let ds = distances[i + 1] - distances[i];
+        let v_decel = (velocities[i + 1] * velocities[i + 1] + 2.0 * MAX_ACCELERATION * ds).sqrt();
+        velocities[i] = velocities[i].min(v_decel);
+    }
+
+    points[0].time = 0.0;
+    points[0].heading = headings[0];
+    points[0].velocity = Vector2 { x: 0.0, y: 0.0 };
+    points[0].rotational_velocity = 0.0;
+    points[0].acceleration = 0.0;
+
+    let mut time = 0.0;
+    for i in 1..n {
+        let ds = distances[i] - distances[i - 1];
+        let v_avg = (velocities[i] + velocities[i - 1]) / 2.0;
+        let dt = if v_avg > EPSILON { ds / v_avg } else { 0.0 };
+        time += dt;
+
+        let omega = if dt > EPSILON { dtheta[i] / dt } else { 0.0 };
+        let dv = velocities[i] - velocities[i - 1];
+        let accel = if dt > EPSILON { dv / dt } else { 0.0 };
+
+        let p_prev = Vector2 {
+            x: points[i - 1].x,
+            y: points[i - 1].y,
+        };
+        let p_now = Vector2 {
+            x: points[i].x,
+            y: points[i].y,
+        };
+        let dir = (p_now - p_prev).normalize();
+
+        points[i].velocity = dir * velocities[i];
+        points[i].time = time;
+        points[i].heading = headings[i];
+        points[i].rotational_velocity = omega;
+        points[i].acceleration = accel;
+    }
+
+    points
 }
 
 /// Equal-distance resampling over all Bézier segments (no curvature used).
@@ -187,7 +506,10 @@ fn generate_path_points(anchors: &[AnchorPoint]) -> Vec<PathPoint> {
                 s: cumulative_s_global + s_along_seg,
                 curvature: curve.curvature(t),
                 velocity: Vector2 { x: 0.0, y: 0.0 },
+                acceleration: 0.0,
                 time: 0.0,
+                heading: 0.0,
+                rotational_velocity: 0.0,
             });
 
             s_along_seg += SAMPLING_DISTANCE;
@@ -210,7 +532,10 @@ fn generate_path_points(anchors: &[AnchorPoint]) -> Vec<PathPoint> {
                     s: last_p.s + d,
                     curvature: 0.0,
                     velocity: Vector2 { x: 0.0, y: 0.0 },
+                    acceleration: 0.0,
                     time: 0.0,
+                    heading: 0.0,
+                    rotational_velocity: 0.0,
                 });
             }
         } else {
@@ -220,7 +545,10 @@ fn generate_path_points(anchors: &[AnchorPoint]) -> Vec<PathPoint> {
                 s: 0.0,
                 curvature: 0.0,
                 velocity: Vector2 { x: 0.0, y: 0.0 },
+                acceleration: 0.0,
                 time: 0.0,
+                heading: 0.0,
+                rotational_velocity: 0.0,
             });
         }
     }

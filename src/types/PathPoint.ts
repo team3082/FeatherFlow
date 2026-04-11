@@ -7,6 +7,9 @@ export interface PathPoint {
   curvature: number;
   velocity: Vector2;
   time: number;
+  acceleration?: number;
+  heading?: number;
+  rotationalVelocity?: number;
 }
 
 export interface TrajectoryResult {

@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+fn default_false() -> bool {
+    false
+}
+
+fn default_zero() -> f64 {
+    0.0
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Vector2 {
@@ -74,7 +82,13 @@ pub struct PathPoint {
     pub s: f64,          // Cumulative distance (arc length)
     pub curvature: f64,
     pub velocity: Vector2,
+    #[serde(default)]
+    pub acceleration: f64,
     pub time: f64,
+    #[serde(default)]
+    pub heading: f64,
+    #[serde(default)]
+    pub rotational_velocity: f64,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -82,4 +96,44 @@ pub struct PathPoint {
 pub struct TrajectoryResult {
     pub total_time: f64,
     pub path_points: Vec<PathPoint>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ControlPoint {
+    pub id: i64,
+    pub u: f64,
+    pub name: String,
+    pub color: String,
+    #[serde(default)]
+    pub attributes: Vec<ControlPointAttribute>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ControlPointAttribute {
+    Stop {
+        #[serde(default = "default_zero")]
+        duration: f64,
+    },
+    Rotate {
+        #[serde(default = "default_zero")]
+        heading: f64,
+    },
+    Command {
+        #[serde(default = "default_false")]
+        stopping: bool,
+    },
+    Loop {
+        #[serde(default)]
+        bounces: i64,
+        #[serde(default)]
+        target_loop_id: Option<i64>,
+    },
+    MotionLimits {
+        #[serde(default = "default_zero")]
+        velocity: f64,
+        #[serde(default = "default_zero")]
+        acceleration: f64,
+    },
 }

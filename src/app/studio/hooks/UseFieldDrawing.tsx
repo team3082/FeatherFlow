@@ -1,9 +1,10 @@
-import { useEffect, useRef, RefObject, useCallback } from 'react';
+import { useEffect, useRef, RefObject, useCallback, useState } from 'react';
 import { SelectedPoint, useStudioStore, Viewport } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
 import { AnchorPoint, ControlPoint, Vector2, SnapPoint } from '@/types';
 import { inchToCanvas } from '@/config/config';
 import { useProjectStore } from '@/store/ProjectStore';
+import { PathPoint } from '@/types/PathPoint';
 
 // Drawing functions
 const setupTransform = (ctx: CanvasRenderingContext2D, viewport: Viewport) => {
@@ -83,6 +84,42 @@ const drawPaths = (ctx: CanvasRenderingContext2D, anchorPoints: AnchorPoint[]) =
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
+  }
+};
+
+const velocityToColor = (velocity: number, maxVelocity: number): string => {
+  if (maxVelocity <= 0) {
+    return 'hsl(240, 100%, 50%)';
+  }
+
+  const ratio = Math.min(velocity / maxVelocity, 1.0);
+  const hue = 240 * (1 - ratio);
+  return `hsl(${hue}, 100%, 50%)`;
+};
+
+const drawVelocityProfilePath = (ctx: CanvasRenderingContext2D, pathPoints: PathPoint[]) => {
+  if (pathPoints.length < 2) return;
+
+  const maxVelocityMagnitude = pathPoints.reduce((max, p) => {
+    const mag = Math.hypot(p.velocity.x, p.velocity.y);
+    return Math.max(max, mag);
+  }, 0);
+
+  for (let i = 0; i < pathPoints.length - 1; i++) {
+    const p1 = pathPoints[i];
+    const p2 = pathPoints[i + 1];
+
+    const c1 = inchToCanvas(p1.x, p1.y);
+    const c2 = inchToCanvas(p2.x, p2.y);
+    const velocityMagnitude = Math.hypot(p1.velocity.x, p1.velocity.y);
+
+    ctx.beginPath();
+    ctx.moveTo(c1.x, c1.y);
+    ctx.lineTo(c2.x, c2.y);
+    ctx.strokeStyle = velocityToColor(velocityMagnitude, maxVelocityMagnitude);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
   }
 };
 
@@ -235,7 +272,7 @@ const drawSnapPoints = (ctx: CanvasRenderingContext2D, snapPoints: SnapPoint[], 
 };
 
 const drawRotation = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint[], getPointAtU: (t: number) => Vector2, selectedPoint: SelectedPoint) => {
-  let isInControl: boolean = selectedPoint?.type === 'control';
+  const isInControl: boolean = selectedPoint?.type === 'control';
 
   if (isInControl && selectedPoint) {
     const controlPoint = controlPoints.find(cp => cp.id === selectedPoint.id);
@@ -256,10 +293,67 @@ const drawRotation = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint
 
 }
 
+const shortestAngleLerp = (aDeg: number, bDeg: number, t: number) => {
+  let delta = bDeg - aDeg;
+  while (delta > 180) delta -= 360;
+  while (delta < -180) delta += 360;
+  return aDeg + delta * t;
+};
+
+const sampleRobotPose = (trajectory: { totalTime: number; pathPoints: PathPoint[] }, elapsedSeconds: number) => {
+  const pathPoints = trajectory.pathPoints;
+  if (pathPoints.length < 2 || trajectory.totalTime <= 0) return null;
+
+  const t = elapsedSeconds % trajectory.totalTime;
+
+  for (let i = 0; i < pathPoints.length - 1; i++) {
+    const p0 = pathPoints[i];
+    const p1 = pathPoints[i + 1];
+
+    if (t < p0.time || t > p1.time) continue;
+
+    const dt = p1.time - p0.time;
+    const ratio = dt > 1e-9 ? (t - p0.time) / dt : 0;
+
+    const x = p0.x + (p1.x - p0.x) * ratio;
+    const y = p0.y + (p1.y - p0.y) * ratio;
+
+    const speed0 = Math.hypot(p0.velocity.x, p0.velocity.y);
+    const speed1 = Math.hypot(p1.velocity.x, p1.velocity.y);
+    const speed = speed0 + (speed1 - speed0) * ratio;
+
+    const heading0 = typeof p0.heading === 'number'
+      ? (p0.heading * 180) / Math.PI
+      : (Math.atan2(p0.velocity.y, p0.velocity.x) * 180) / Math.PI;
+    const heading1 = typeof p1.heading === 'number'
+      ? (p1.heading * 180) / Math.PI
+      : (Math.atan2(p1.velocity.y, p1.velocity.x) * 180) / Math.PI;
+
+    const headingDeg = shortestAngleLerp(heading0, heading1, ratio);
+    return { x, y, headingDeg, speed };
+  }
+
+  return null;
+};
+
+const drawMovingRobotOnTrajectory = (
+  ctx: CanvasRenderingContext2D,
+  trajectory: { totalTime: number; pathPoints: PathPoint[] },
+  elapsedSeconds: number,
+) => {
+  const pose = sampleRobotPose(trajectory, elapsedSeconds);
+  if (!pose) return;
+
+  // Only show animated follow robot while it's moving.
+  if (pose.speed <= 0.05) return;
+
+  drawRobot(ctx, inchToCanvas(pose.x, pose.y), pose.headingDeg);
+};
+
 const drawRobot = (ctx: CanvasRenderingContext2D, position: Vector2, rotation: number) => {
-  const ROBOT_WIDTH = 24;
-  const ROBOT_LENGTH = 24;
-  const MODULE_SIZE = 6;
+  const ROBOT_WIDTH = 32;
+  const ROBOT_LENGTH = 32;
+  const MODULE_SIZE = 8;
   const MODULE_OFFSET_X = ROBOT_LENGTH / 2 - MODULE_SIZE / 2;
   const MODULE_OFFSET_Y = ROBOT_WIDTH / 2 - MODULE_SIZE / 2;
 
@@ -331,9 +425,12 @@ export const useFieldDrawing = (
   const selectedPoint = useStudioStore(state => state.selectedPoint);
   const getPointAtU = useStudioStore(state => state.getPointAtU);
   const resetView = useStudioStore(state => state.resetView);
+  const trajectory = useStudioStore(state => state.trajectory);
+  const showingVelocity = useStudioStore(state => state.showingVelocity);
   
   const snapPoints = useProjectStore(state => state.snapPoints);
   const snapEnabled = useProjectStore(state => state.snapEnabled);
+  const [animationClock, setAnimationClock] = useState(0);
 
   // Load field image
   useEffect(() => {
@@ -350,6 +447,23 @@ export const useFieldDrawing = (
     };
     img.src = FIELD_CONFIG.imagePath;
   }, [containerRef, resetView]);
+
+  // Animation ticker used for trajectory-follow robot playback.
+  useEffect(() => {
+    if (!showingVelocity || !trajectory || trajectory.pathPoints.length < 2 || trajectory.totalTime <= 0) {
+      setAnimationClock(0);
+      return;
+    }
+
+    let animationFrameId = 0;
+    const tick = (nowMs: number) => {
+      setAnimationClock(nowMs / 1000);
+      animationFrameId = requestAnimationFrame(tick);
+    };
+
+    animationFrameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [showingVelocity, trajectory]);
 
   // Memoized drawing function
   const draw = useCallback(() => {
@@ -369,8 +483,12 @@ export const useFieldDrawing = (
     // Draw snap points (under paths)
     drawSnapPoints(ctx, snapPoints, selectedPoint, snapEnabled);
 
-    // Draw paths
-    drawPaths(ctx, anchorPoints);
+    // Draw paths or velocity profile directly on the canvas.
+    if (showingVelocity && trajectory && trajectory.pathPoints.length > 1) {
+      drawVelocityProfilePath(ctx, trajectory.pathPoints);
+    } else {
+      drawPaths(ctx, anchorPoints);
+    }
 
     // Draw anchors
     drawAnchors(ctx, anchorPoints, selectedPoint);
@@ -379,11 +497,27 @@ export const useFieldDrawing = (
     drawControlPoints(ctx, controlPoints, selectedPoint, getPointAtU);
 
     // Draw robot
-    drawRotation(ctx, controlPoints, getPointAtU, selectedPoint);
+    if (showingVelocity && trajectory && trajectory.pathPoints.length > 1) {
+      drawMovingRobotOnTrajectory(ctx, trajectory, animationClock);
+    } else {
+      drawRotation(ctx, controlPoints, getPointAtU, selectedPoint);
+    }
 
     //Restore
     ctx.restore();
-  }, [canvasRef, viewport, anchorPoints, selectedPoint, controlPoints, getPointAtU, snapPoints, snapEnabled]);
+  }, [
+    canvasRef,
+    viewport,
+    anchorPoints,
+    selectedPoint,
+    controlPoints,
+    getPointAtU,
+    snapPoints,
+    snapEnabled,
+    showingVelocity,
+    trajectory,
+    animationClock,
+  ]);
 
   // Drawing effect
   useEffect(() => {
