@@ -22,6 +22,13 @@ struct ActionDescriptor {
 }
 
 #[derive(Debug, Clone)]
+struct MotionLimitFrame {
+    t: f64,
+    max_velocity: f64,
+    max_acceleration: f64,
+}
+
+#[derive(Debug, Clone)]
 enum ActionKind {
     Stop { duration: f64 },
     Rotate { heading: f64 },
@@ -46,7 +53,9 @@ fn compute_travel_time(anchors: Vec<AnchorPoint>, control_points: Option<Vec<Con
         };
     }
 
-    let actions = parse_actions(control_points.unwrap_or_default(), anchors.len().saturating_sub(1));
+    let control_points = control_points.unwrap_or_default();
+    let actions = parse_actions(control_points.clone(), anchors.len().saturating_sub(1));
+    let motion_limits = parse_motion_limits(&control_points, anchors.len().saturating_sub(1));
     let split_values = collect_split_values(&actions);
     let segments = split_path(&path_points, &split_values);
     let rotate_by_dist = build_rotate_keyframes_by_distance(&path_points, &actions, false);
@@ -60,8 +69,21 @@ fn compute_travel_time(anchors: Vec<AnchorPoint>, control_points: Option<Vec<Con
             continue;
         }
 
+        let segment_t_start = if segment_idx == 0 {
+            0.0
+        } else {
+            split_values.get(segment_idx - 1).copied().unwrap_or(0.0)
+        };
+        let segment_t_end = split_values.get(segment_idx).copied().unwrap_or(1.0);
+
         let target_headings = build_target_headings(segment, &rotate_by_dist, segment_dist_offset);
-        let mut profiled_segment = profile_segment(segment, &target_headings);
+        let mut profiled_segment = profile_segment(
+            segment,
+            &target_headings,
+            segment_t_start,
+            segment_t_end,
+            &motion_limits,
+        );
         if profiled_segment.is_empty() {
             continue;
         }
@@ -118,18 +140,22 @@ fn compute_travel_time(anchors: Vec<AnchorPoint>, control_points: Option<Vec<Con
     }
 }
 
+fn normalize_u_to_global_t(u: f64, curve_count: usize) -> f64 {
+    if curve_count == 0 {
+        return 0.0;
+    }
+
+    let max_curve_index = (curve_count - 1) as f64;
+    let curve_index = u.floor().clamp(0.0, max_curve_index);
+    let local_t = (u - curve_index).clamp(0.0, 1.0);
+    ((curve_index + local_t) / curve_count as f64).clamp(0.0, 1.0)
+}
+
 fn parse_actions(control_points: Vec<ControlPoint>, curve_count: usize) -> Vec<ActionDescriptor> {
     let mut actions = Vec::new();
-    let denominator = curve_count.max(1) as f64;
 
     for cp in control_points {
-        let global_t = if cp.u <= 1.0 {
-            cp.u.clamp(0.0, 1.0)
-        } else {
-            let curve_index = cp.u.floor();
-            let local_t = cp.u - curve_index;
-            ((curve_index + local_t) / denominator).clamp(0.0, 1.0)
-        };
+        let global_t = normalize_u_to_global_t(cp.u, curve_count.max(1));
 
         for attribute in cp.attributes {
             match attribute {
@@ -159,6 +185,63 @@ fn parse_actions(control_points: Vec<ControlPoint>, curve_count: usize) -> Vec<A
 
     actions.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
     actions
+}
+
+fn parse_motion_limits(control_points: &[ControlPoint], curve_count: usize) -> Vec<MotionLimitFrame> {
+    let curve_count = curve_count.max(1);
+    let mut limits: Vec<MotionLimitFrame> = Vec::new();
+
+    for cp in control_points {
+        let global_t = normalize_u_to_global_t(cp.u, curve_count);
+
+        for attribute in &cp.attributes {
+            if let ControlPointAttribute::MotionLimits {
+                velocity,
+                acceleration,
+            } = attribute
+            {
+                if *velocity > EPSILON && *acceleration > EPSILON {
+                    limits.push(MotionLimitFrame {
+                        t: global_t,
+                        max_velocity: *velocity,
+                        max_acceleration: *acceleration,
+                    });
+                }
+            }
+        }
+    }
+
+    limits.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut deduped: Vec<MotionLimitFrame> = Vec::new();
+    for frame in limits {
+        if let Some(last) = deduped.last_mut() {
+            if (last.t - frame.t).abs() < EPSILON {
+                last.max_velocity = last.max_velocity.min(frame.max_velocity);
+                last.max_acceleration = last.max_acceleration.min(frame.max_acceleration);
+                continue;
+            }
+        }
+        deduped.push(frame);
+    }
+
+    deduped
+}
+
+fn resolve_motion_limit_at_t(frames: &[MotionLimitFrame], t: f64) -> (f64, f64) {
+    let mut max_velocity = MAX_TRANSLATIONAL_VELOCITY;
+    let mut max_acceleration = MAX_ACCELERATION;
+
+    for frame in frames {
+        if frame.t <= t + EPSILON {
+            max_velocity = frame.max_velocity;
+            max_acceleration = frame.max_acceleration;
+        } else {
+            break;
+        }
+    }
+
+    (max_velocity, max_acceleration)
 }
 
 fn collect_split_values(actions: &[ActionDescriptor]) -> Vec<f64> {
@@ -325,7 +408,13 @@ fn interpolate_heading_by_distance(rotate_by_dist: &[(f64, f64)], d: f64) -> f64
     last.1
 }
 
-fn profile_segment(segment: &[PathPoint], target_headings: &[f64]) -> Vec<PathPoint> {
+fn profile_segment(
+    segment: &[PathPoint],
+    target_headings: &[f64],
+    segment_t_start: f64,
+    segment_t_end: f64,
+    motion_limits: &[MotionLimitFrame],
+) -> Vec<PathPoint> {
     if segment.len() < 2 {
         return Vec::new();
     }
@@ -352,6 +441,21 @@ fn profile_segment(segment: &[PathPoint], target_headings: &[f64]) -> Vec<PathPo
         let dy = points[i].y - points[i - 1].y;
         distances[i] = distances[i - 1] + (dx * dx + dy * dy).sqrt();
     }
+    let total_distance = distances[n - 1];
+
+    let mut point_max_velocities = vec![MAX_TRANSLATIONAL_VELOCITY; n];
+    let mut point_max_accelerations = vec![MAX_ACCELERATION; n];
+    for i in 0..n {
+        let rel = if total_distance > EPSILON {
+            distances[i] / total_distance
+        } else {
+            0.0
+        };
+        let t = segment_t_start + (segment_t_end - segment_t_start) * rel;
+        let (v_max, a_max) = resolve_motion_limit_at_t(motion_limits, t.clamp(0.0, 1.0));
+        point_max_velocities[i] = v_max;
+        point_max_accelerations[i] = a_max;
+    }
 
     let mut headings = if target_headings.len() == n {
         target_headings.to_vec()
@@ -375,7 +479,7 @@ fn profile_segment(segment: &[PathPoint], target_headings: &[f64]) -> Vec<PathPo
         dtheta[i] = headings[i] - headings[i - 1];
     }
 
-    let mut velocities = vec![MAX_TRANSLATIONAL_VELOCITY; n];
+    let mut velocities = point_max_velocities.clone();
 
     for i in 1..n {
         let ds = distances[i] - distances[i - 1];
@@ -396,22 +500,25 @@ fn profile_segment(segment: &[PathPoint], target_headings: &[f64]) -> Vec<PathPo
     for i in 0..n {
         let k = points[i].curvature;
         if k.abs() > EPSILON {
-            let v_lat = (MAX_LATERAL_ACCELERATION / k.abs()).sqrt();
+            let a_lat_cap = MAX_LATERAL_ACCELERATION.min(point_max_accelerations[i]);
+            let v_lat = (a_lat_cap / k.abs()).sqrt();
             velocities[i] = velocities[i].min(v_lat);
         }
     }
 
     velocities[0] = 0.0;
     for i in 1..n {
-        let ds = distances[i] - distances[i - 1];
-        let v_accel = (velocities[i - 1] * velocities[i - 1] + 2.0 * MAX_ACCELERATION * ds).sqrt();
+        let ds = (distances[i] - distances[i - 1]).max(0.0);
+        let step_accel_limit = point_max_accelerations[i - 1].min(point_max_accelerations[i]);
+        let v_accel = (velocities[i - 1] * velocities[i - 1] + 2.0 * step_accel_limit * ds).sqrt();
         velocities[i] = velocities[i].min(v_accel);
     }
 
     velocities[n - 1] = 0.0;
     for i in (0..n - 1).rev() {
-        let ds = distances[i + 1] - distances[i];
-        let v_decel = (velocities[i + 1] * velocities[i + 1] + 2.0 * MAX_ACCELERATION * ds).sqrt();
+        let ds = (distances[i + 1] - distances[i]).max(0.0);
+        let step_accel_limit = point_max_accelerations[i].min(point_max_accelerations[i + 1]);
+        let v_decel = (velocities[i + 1] * velocities[i + 1] + 2.0 * step_accel_limit * ds).sqrt();
         velocities[i] = velocities[i].min(v_decel);
     }
 
