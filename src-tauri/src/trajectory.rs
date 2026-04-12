@@ -1,0 +1,619 @@
+use crate::bezier_curve::BezierCurve;
+use crate::controls::{
+    build_rotate_keyframes_by_distance,
+    collect_split_values,
+    parse_actions,
+    parse_motion_limits,
+    resolve_motion_limit_at_t,
+    stop_duration_at_t,
+};
+use crate::types::{AnchorPoint, ControlPoint, PathPoint, TrajectoryResult, Vector2};
+
+/// Computes a full time-parameterized trajectory from anchors and optional control points.
+///
+/// This is the top-level pipeline entry point:
+/// 1) sample the geometric path,
+/// 2) parse actions and motion limits,
+/// 3) split at stop/command boundaries,
+/// 4) profile each segment,
+/// 5) merge results and stop holds into one timeline.
+///
+/// ################ Arguments
+/// * `anchors` - Ordered anchor points that define connected Bezier segments.
+/// * `control_points` - Optional control points carrying stop/rotate/command/motion-limit attributes.
+///
+/// ################ Returns
+/// A `TrajectoryResult` containing `total_time` and fully profiled `path_points`.
+pub(crate) fn compute_travel_time(
+    anchors: Vec<AnchorPoint>,
+    control_points: Option<Vec<ControlPoint>>,
+) -> TrajectoryResult {
+    if anchors.len() < 2 {
+        return TrajectoryResult {
+            total_time: 0.0,
+            path_points: Vec::new(),
+        };
+    }
+
+    let (path_points, sample_ts) = generate_path_points(&anchors);
+    if path_points.len() < 2 {
+        return TrajectoryResult {
+            total_time: 0.0,
+            path_points: Vec::new(),
+        };
+    }
+
+    let control_points = control_points.unwrap_or_default();
+    let actions = parse_actions(control_points.clone(), anchors.len().saturating_sub(1));
+    let motion_limits = parse_motion_limits(&control_points, anchors.len().saturating_sub(1));
+    let split_values = collect_split_values(&actions);
+    let segments = split_path(&path_points, &sample_ts, &split_values);
+    let rotate_by_dist = build_rotate_keyframes_by_distance(&path_points, &sample_ts, &actions, false);
+
+    let mut all_points: Vec<PathPoint> = Vec::new();
+    let mut cumulative_time = 0.0;
+    let mut segment_dist_offset = 0.0;
+
+    for (segment_idx, (segment_points, segment_ts)) in segments.iter().enumerate() {
+        if segment_points.len() < 2 {
+            continue;
+        }
+
+        let target_headings = build_target_headings(segment_points, &rotate_by_dist, segment_dist_offset);
+        let mut profiled_segment = profile_segment(
+            segment_points,
+            segment_ts,
+            &target_headings,
+            &motion_limits,
+        );
+        if profiled_segment.is_empty() {
+            continue;
+        }
+
+        for point in &mut profiled_segment {
+            point.time += cumulative_time;
+        }
+
+        if let Some(last) = all_points.last() {
+            if let Some(first) = profiled_segment.first() {
+                let d = ((last.x - first.x).powi(2) + (last.y - first.y).powi(2)).sqrt();
+                if d < crate::EPSILON {
+                    profiled_segment.remove(0);
+                }
+            }
+        }
+
+        if let Some(last) = profiled_segment.last() {
+            cumulative_time = last.time;
+        }
+
+        all_points.extend(profiled_segment);
+
+        if segment_idx < split_values.len() {
+            let split_t = split_values[segment_idx];
+            let stop_duration = stop_duration_at_t(&actions, split_t);
+            if stop_duration > crate::EPSILON {
+                if let Some(last_point) = all_points.last().cloned() {
+                    let mut hold = last_point;
+                    hold.time += stop_duration;
+                    hold.velocity = Vector2 { x: 0.0, y: 0.0 };
+                    hold.acceleration = 0.0;
+                    hold.rotational_velocity = 0.0;
+                    all_points.push(hold);
+                    cumulative_time += stop_duration;
+                }
+            }
+        }
+
+        segment_dist_offset += segment_points
+            .windows(2)
+            .map(|w| {
+                let dx = w[1].x - w[0].x;
+                let dy = w[1].y - w[0].y;
+                (dx * dx + dy * dy).sqrt()
+            })
+            .sum::<f64>();
+    }
+
+    let total_time = all_points.last().map_or(0.0, |p| p.time);
+    TrajectoryResult {
+        total_time,
+        path_points: all_points,
+    }
+}
+
+/// Splits a sampled path into contiguous sub-segments at normalized split boundaries.
+///
+/// Boundaries are de-duplicated and clamped to `[0, 1]`. Segment endpoints are interpolated
+/// exactly at boundary `t` values so stop locations align with control-point parameters.
+///
+/// ################ Arguments
+/// * `path` - Sampled path points.
+/// * `sample_ts` - Global normalized `t` value for each sampled point in `path`.
+/// * `split_values` - Normalized split boundaries (typically stop/stopping-command locations).
+///
+/// ################ Returns
+/// A list of `(segment_points, segment_ts)` tuples.
+fn split_path(path: &[PathPoint], sample_ts: &[f64], split_values: &[f64]) -> Vec<(Vec<PathPoint>, Vec<f64>)> {
+    if path.len() < 2 {
+        return Vec::new();
+    }
+
+    if sample_ts.len() != path.len() {
+        return vec![(path.to_vec(), vec![0.0; path.len()])];
+    }
+
+    if split_values.is_empty() {
+        return vec![(path.to_vec(), sample_ts.to_vec())];
+    }
+
+    let mut segments: Vec<(Vec<PathPoint>, Vec<f64>)> = Vec::new();
+    let mut boundaries: Vec<f64> = split_values.iter().map(|t| t.clamp(0.0, 1.0)).collect();
+    boundaries.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    boundaries.dedup_by(|a, b| (*a - *b).abs() < crate::EPSILON);
+
+    let mut start_t = 0.0;
+    for end_t in boundaries.into_iter().chain(std::iter::once(1.0)) {
+        if end_t <= start_t + crate::EPSILON {
+            continue;
+        }
+
+        if let Some(segment) = build_segment_between(path, sample_ts, start_t, end_t) {
+            segments.push(segment);
+        }
+
+        start_t = end_t;
+    }
+
+    if segments.is_empty() {
+        segments.push((path.to_vec(), sample_ts.to_vec()));
+    }
+
+    segments
+}
+
+/// Builds a single segment between two normalized `t` bounds.
+///
+/// The returned segment always includes exact interpolated endpoints at `t_start` and `t_end`
+/// plus interior sampled points that fall strictly inside the range.
+///
+/// ################ Arguments
+/// * `path` - Sampled path points.
+/// * `sample_ts` - Global normalized `t` value for each sampled point.
+/// * `t_start` - Inclusive segment start in normalized parameter space.
+/// * `t_end` - Inclusive segment end in normalized parameter space.
+///
+/// ################ Returns
+/// `Some((points, ts))` when a valid segment can be formed, otherwise `None`.
+fn build_segment_between(
+    path: &[PathPoint],
+    sample_ts: &[f64],
+    t_start: f64,
+    t_end: f64,
+) -> Option<(Vec<PathPoint>, Vec<f64>)> {
+    let t_start = t_start.clamp(0.0, 1.0);
+    let t_end = t_end.clamp(0.0, 1.0);
+    if t_end <= t_start + crate::EPSILON {
+        return None;
+    }
+
+    let mut segment_points: Vec<PathPoint> = Vec::new();
+    let mut segment_ts: Vec<f64> = Vec::new();
+
+    segment_points.push(interpolate_path_point_at_t(path, sample_ts, t_start));
+    segment_ts.push(t_start);
+
+    for i in 0..sample_ts.len() {
+        let t = sample_ts[i];
+        if t > t_start + crate::EPSILON && t < t_end - crate::EPSILON {
+            segment_points.push(path[i].clone());
+            segment_ts.push(t);
+        }
+    }
+
+    segment_points.push(interpolate_path_point_at_t(path, sample_ts, t_end));
+    segment_ts.push(t_end);
+
+    if segment_points.len() < 2 {
+        return None;
+    }
+
+    Some((segment_points, segment_ts))
+}
+
+/// Interpolates a path point at a specific normalized `t` along the sampled path.
+///
+/// If `t` lands exactly on a sample, the exact sample is returned. Otherwise linear interpolation
+/// is used between nearest neighbors for `x`, `y`, `s`, and `curvature`.
+///
+/// #### Arguments
+/// * `path` - Sampled path points.
+/// * `sample_ts` - Global normalized `t` value for each sampled point.
+/// * `t` - Query position in normalized parameter space.
+///
+/// #### Returns
+/// Interpolated `PathPoint` with kinematic fields reset for later profiling.
+fn interpolate_path_point_at_t(path: &[PathPoint], sample_ts: &[f64], t: f64) -> PathPoint {
+    if path.is_empty() || sample_ts.is_empty() {
+        return PathPoint::default();
+    }
+
+    let t = t.clamp(0.0, 1.0);
+    if t <= sample_ts[0] {
+        return path[0].clone();
+    }
+
+    let last_idx = sample_ts.len() - 1;
+    if t >= sample_ts[last_idx] {
+        return path[last_idx].clone();
+    }
+
+    match sample_ts.binary_search_by(|probe| probe.partial_cmp(&t).unwrap_or(std::cmp::Ordering::Equal)) {
+        Ok(idx) => path[idx].clone(),
+        Err(idx) => {
+            let lo = idx.saturating_sub(1);
+            let hi = idx.min(last_idx);
+            let t0 = sample_ts[lo];
+            let t1 = sample_ts[hi];
+            let span = (t1 - t0).abs();
+            let alpha = if span <= crate::EPSILON {
+                0.0
+            } else {
+                ((t - t0) / (t1 - t0)).clamp(0.0, 1.0)
+            };
+
+            let p0 = &path[lo];
+            let p1 = &path[hi];
+
+            PathPoint {
+                x: p0.x + alpha * (p1.x - p0.x),
+                y: p0.y + alpha * (p1.y - p0.y),
+                s: p0.s + alpha * (p1.s - p0.s),
+                curvature: p0.curvature + alpha * (p1.curvature - p0.curvature),
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                acceleration: 0.0,
+                time: 0.0,
+                heading: 0.0,
+                rotational_velocity: 0.0,
+            }
+        }
+    }
+}
+
+/// Builds desired heading values for a segment by sampling rotate keyframes by distance.
+///
+/// Segment-local cumulative distance is offset by `segment_dist_offset` so interpolation is done
+/// in the full-path distance frame.
+///
+/// #### Arguments
+/// * `segment` - Segment path points.
+/// * `rotate_by_dist` - Global rotate keyframes as `(distance, heading_radians)`.
+/// * `segment_dist_offset` - Total traveled distance before this segment.
+///
+/// #### Returns
+/// Heading target for each segment point.
+fn build_target_headings(segment: &[PathPoint], rotate_by_dist: &[(f64, f64)], segment_dist_offset: f64) -> Vec<f64> {
+    if segment.is_empty() {
+        return Vec::new();
+    }
+
+    if rotate_by_dist.is_empty() {
+        return vec![0.0; segment.len()];
+    }
+
+    let mut seg_dist = vec![0.0; segment.len()];
+    for i in 1..segment.len() {
+        let dx = segment[i].x - segment[i - 1].x;
+        let dy = segment[i].y - segment[i - 1].y;
+        seg_dist[i] = seg_dist[i - 1] + (dx * dx + dy * dy).sqrt();
+    }
+
+    seg_dist
+        .into_iter()
+        .map(|d| crate::controls::interpolate_heading_by_distance(rotate_by_dist, segment_dist_offset + d))
+        .collect()
+}
+
+/// Profiles a segment into a dynamically feasible translational/rotational trajectory.
+///
+/// The profiler applies velocity caps from motion limits, wheel-speed coupling, rotational
+/// constraints, and curvature limits, then performs forward/backward acceleration passes,
+/// and finally integrates time and derivatives.
+///
+/// #### Arguments
+/// * `segment` - Geometric segment points.
+/// * `segment_ts` - Normalized `t` per segment point.
+/// * `target_headings` - Desired heading at each segment point.
+/// * `motion_limits` - Piecewise-constant motion-limit frames over global `t`.
+///
+/// #### Returns
+/// Profiled segment points with velocity/time/heading/acceleration fields populated.
+fn profile_segment(
+    segment: &[PathPoint],
+    segment_ts: &[f64],
+    target_headings: &[f64],
+    motion_limits: &[crate::controls::MotionLimitFrame],
+) -> Vec<PathPoint> {
+    if segment.len() < 2 {
+        return Vec::new();
+    }
+
+    let n = segment.len();
+    let mut points: Vec<PathPoint> = segment
+        .iter()
+        .map(|p| PathPoint {
+            x: p.x,
+            y: p.y,
+            s: p.s,
+            curvature: p.curvature,
+            velocity: Vector2 { x: 0.0, y: 0.0 },
+            acceleration: 0.0,
+            time: 0.0,
+            heading: 0.0,
+            rotational_velocity: 0.0,
+        })
+        .collect();
+
+    let mut distances = vec![0.0; n];
+    for i in 1..n {
+        let dx = points[i].x - points[i - 1].x;
+        let dy = points[i].y - points[i - 1].y;
+        distances[i] = distances[i - 1] + (dx * dx + dy * dy).sqrt();
+    }
+    let total_distance = distances[n - 1];
+
+    let mut point_max_velocities = vec![crate::MAX_TRANSLATIONAL_VELOCITY; n];
+    let mut point_max_accelerations = vec![crate::MAX_ACCELERATION; n];
+    for i in 0..n {
+        let rel = if total_distance > crate::EPSILON { distances[i] / total_distance } else { 0.0 };
+        let t = segment_ts
+            .get(i)
+            .copied()
+            .unwrap_or(rel)
+            .clamp(0.0, 1.0);
+        let (v_max, a_max) = resolve_motion_limit_at_t(motion_limits, t.clamp(0.0, 1.0));
+        point_max_velocities[i] = v_max;
+        point_max_accelerations[i] = a_max;
+    }
+
+    let mut headings = if target_headings.len() == n {
+        target_headings.to_vec()
+    } else {
+        vec![0.0; n]
+    };
+
+    for i in 1..n {
+        let mut delta = headings[i] - headings[i - 1];
+        while delta > std::f64::consts::PI {
+            delta -= 2.0 * std::f64::consts::PI;
+        }
+        while delta < -std::f64::consts::PI {
+            delta += 2.0 * std::f64::consts::PI;
+        }
+        headings[i] = headings[i - 1] + delta;
+    }
+
+    let mut dtheta = vec![0.0; n];
+    for i in 1..n {
+        dtheta[i] = headings[i] - headings[i - 1];
+    }
+
+    let mut velocities = point_max_velocities.clone();
+
+    for i in 1..n {
+        let ds = distances[i] - distances[i - 1];
+        if ds <= crate::EPSILON {
+            continue;
+        }
+
+        let rot_density = (dtheta[i].abs() / ds) * crate::SWERVE_RADIUS;
+        let v_wheel = crate::MAX_WHEEL_SPEED / (1.0 + rot_density);
+        velocities[i] = velocities[i].min(v_wheel);
+
+        if dtheta[i].abs() > crate::EPSILON {
+            let v_rot = crate::MAX_ROTATIONAL_VELOCITY * ds / dtheta[i].abs();
+            velocities[i] = velocities[i].min(v_rot);
+        }
+    }
+
+    for i in 0..n {
+        let k = points[i].curvature;
+        if k.abs() > crate::EPSILON {
+            let a_lat_cap = crate::MAX_LATERAL_ACCELERATION.min(point_max_accelerations[i]);
+            let v_lat = (a_lat_cap / k.abs()).sqrt();
+            velocities[i] = velocities[i].min(v_lat);
+        }
+    }
+
+    velocities[0] = 0.0;
+    for i in 1..n {
+        let ds = (distances[i] - distances[i - 1]).max(0.0);
+        let step_accel_limit = point_max_accelerations[i - 1].min(point_max_accelerations[i]);
+        let v_accel = (velocities[i - 1] * velocities[i - 1] + 2.0 * step_accel_limit * ds).sqrt();
+        velocities[i] = velocities[i].min(v_accel);
+    }
+
+    velocities[n - 1] = 0.0;
+    for i in (0..n - 1).rev() {
+        let ds = (distances[i + 1] - distances[i]).max(0.0);
+        let step_accel_limit = point_max_accelerations[i].min(point_max_accelerations[i + 1]);
+        let v_decel = (velocities[i + 1] * velocities[i + 1] + 2.0 * step_accel_limit * ds).sqrt();
+        velocities[i] = velocities[i].min(v_decel);
+    }
+
+    points[0].time = 0.0;
+    points[0].heading = headings[0];
+    points[0].velocity = Vector2 { x: 0.0, y: 0.0 };
+    points[0].rotational_velocity = 0.0;
+    points[0].acceleration = 0.0;
+
+    let mut time = 0.0;
+    for i in 1..n {
+        let ds = distances[i] - distances[i - 1];
+        let v_avg = (velocities[i] + velocities[i - 1]) / 2.0;
+        let dt = if v_avg > crate::EPSILON { ds / v_avg } else { 0.0 };
+        time += dt;
+
+        let omega = if dt > crate::EPSILON { dtheta[i] / dt } else { 0.0 };
+        let dv = velocities[i] - velocities[i - 1];
+        let accel = if dt > crate::EPSILON { dv / dt } else { 0.0 };
+
+        let p_prev = Vector2 {
+            x: points[i - 1].x,
+            y: points[i - 1].y,
+        };
+        let p_now = Vector2 {
+            x: points[i].x,
+            y: points[i].y,
+        };
+        let dir = (p_now - p_prev).normalize();
+
+        points[i].velocity = dir * velocities[i];
+        points[i].time = time;
+        points[i].heading = headings[i];
+        points[i].rotational_velocity = omega;
+        points[i].acceleration = accel;
+    }
+
+    points
+}
+
+/// Generates approximately equal-distance samples over all Bezier anchor segments.
+///
+/// Also returns per-sample normalized global `t` values so control-point events can be mapped
+/// accurately in parameter space.
+///
+/// #### Arguments
+/// * `anchors` - Ordered anchor points defining cubic Bezier segments.
+///
+/// #### Returns
+/// Tuple `(path_points, sample_ts)` where each `sample_ts[i]` corresponds to `path_points[i]`.
+fn generate_path_points(anchors: &[AnchorPoint]) -> (Vec<PathPoint>, Vec<f64>) {
+    let mut path: Vec<PathPoint> = Vec::new();
+    let mut sample_ts: Vec<f64> = Vec::new();
+    let mut cumulative_s_global: f64 = 0.0;
+    let curve_count = anchors.len().saturating_sub(1).max(1);
+
+    for i in 0..anchors.len() - 1 {
+        let p0 = anchors[i].position;
+        let p1 = anchors[i].position + anchors[i].handle_out_offset;
+        let p2 = anchors[i + 1].position + anchors[i + 1].handle_in_offset;
+        let p3 = anchors[i + 1].position;
+        let curve = BezierCurve::new(p0, p1, p2, p3);
+
+        let mut arc_length_lut: Vec<(f64, f64)> = Vec::with_capacity(crate::OVERSAMPLING_FACTOR + 1);
+        let mut last_pos = curve.position(0.0);
+        let mut s_local = 0.0;
+        arc_length_lut.push((0.0, 0.0));
+        for j in 1..=crate::OVERSAMPLING_FACTOR {
+            let t = j as f64 / crate::OVERSAMPLING_FACTOR as f64;
+            let pos = curve.position(t);
+            s_local += (pos - last_pos).magnitude();
+            arc_length_lut.push((s_local, t));
+            last_pos = pos;
+        }
+        let seg_len = s_local;
+
+        let mut s_along_seg = 0.0;
+        let mut is_first_sample = path.is_empty();
+
+        while s_along_seg <= seg_len + 1e-9 {
+            let t = interpolate_t_for_distance(&arc_length_lut, s_along_seg);
+            let pos = curve.position(t);
+
+            if !is_first_sample {
+                if let Some(last_p) = path.last() {
+                    let d = (pos - Vector2 { x: last_p.x, y: last_p.y }).magnitude();
+                    if d < 1e-9 {
+                        s_along_seg += crate::SAMPLING_DISTANCE;
+                        continue;
+                    }
+                }
+            }
+
+            path.push(PathPoint {
+                x: pos.x,
+                y: pos.y,
+                s: cumulative_s_global + s_along_seg,
+                curvature: curve.curvature(t),
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                acceleration: 0.0,
+                time: 0.0,
+                heading: 0.0,
+                rotational_velocity: 0.0,
+            });
+            sample_ts.push(((i as f64 + t.clamp(0.0, 1.0)) / curve_count as f64).clamp(0.0, 1.0));
+
+            s_along_seg += crate::SAMPLING_DISTANCE;
+            is_first_sample = false;
+        }
+
+        cumulative_s_global += seg_len;
+    }
+
+    if let Some(last_anchor) = anchors.last() {
+        let last_pos = last_anchor.position;
+        if let Some(last_p) = path.last() {
+            let d = (last_pos - Vector2 { x: last_p.x, y: last_p.y }).magnitude();
+            if d > 1e-9 {
+                path.push(PathPoint {
+                    x: last_pos.x,
+                    y: last_pos.y,
+                    s: last_p.s + d,
+                    curvature: 0.0,
+                    velocity: Vector2 { x: 0.0, y: 0.0 },
+                    acceleration: 0.0,
+                    time: 0.0,
+                    heading: 0.0,
+                    rotational_velocity: 0.0,
+                });
+                sample_ts.push(1.0);
+            }
+        } else {
+            path.push(PathPoint {
+                x: last_pos.x,
+                y: last_pos.y,
+                s: 0.0,
+                curvature: 0.0,
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                acceleration: 0.0,
+                time: 0.0,
+                heading: 0.0,
+                rotational_velocity: 0.0,
+            });
+            sample_ts.push(1.0);
+        }
+    }
+
+    (path, sample_ts)
+}
+
+/// Inverts an arc-length lookup table to find Bezier `t` for a target traveled distance.
+///
+/// Uses binary search on the LUT and linear interpolation between adjacent entries.
+///
+/// #### Arguments
+/// * `lut` - Arc-length LUT entries as `(distance, t)` sorted by distance.
+/// * `distance` - Query distance from the beginning of the segment.
+///
+/// #### Returns
+/// Interpolated Bezier parameter `t` in `[0, 1]`.
+fn interpolate_t_for_distance(lut: &[(f64, f64)], distance: f64) -> f64 {
+    if distance <= 0.0 {
+        return 0.0;
+    }
+    let last = lut.last().unwrap();
+    if distance >= last.0 {
+        return last.1;
+    }
+
+    match lut.binary_search_by(|(s, _)| s.partial_cmp(&distance).unwrap()) {
+        Ok(idx) => lut[idx].1,
+        Err(idx) => {
+            let (s1, t1) = lut[idx - 1];
+            let (s2, t2) = lut[idx];
+            let frac = (distance - s1) / (s2 - s1);
+            t1 + frac * (t2 - t1)
+        }
+    }
+}

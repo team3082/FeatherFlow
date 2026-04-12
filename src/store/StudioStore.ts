@@ -27,6 +27,8 @@ export interface StudioState {
   activeTool: ActiveToolType;
   trajectory: TrajectoryResult | null;
   trajectoryTime: number;
+  trajectoryPlaybackTime: number;
+  isTrajectoryScrubbing: boolean;
   showingVelocity: boolean;
 
   // Pan & Zoom
@@ -65,6 +67,8 @@ export interface StudioState {
   invokeTrajectoryComputation: () => void;
 
   setTrajectory: (trajectory: TrajectoryResult | null) => void;
+  setTrajectoryPlaybackTime: (time: number) => void;
+  setIsTrajectoryScrubbing: (scrubbing: boolean) => void;
   setShowingVelocity: (showing: boolean) => void;
 
   // Snap Point Actions
@@ -101,10 +105,22 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   isDragging: false,
   trajectory: null,
   trajectoryTime: 0,
+  trajectoryPlaybackTime: 0,
+  isTrajectoryScrubbing: false,
   showingVelocity: false,
 
   setShowingVelocity(showing: boolean) {
     set({ showingVelocity: showing });
+  },
+
+  setTrajectoryPlaybackTime(time: number) {
+    const total = get().trajectoryTime;
+    const clamped = total > 0 ? Math.max(0, Math.min(total, time)) : 0;
+    set({ trajectoryPlaybackTime: clamped });
+  },
+
+  setIsTrajectoryScrubbing(scrubbing: boolean) {
+    set({ isTrajectoryScrubbing: scrubbing });
   },
 
   // Anchor Point Actions
@@ -387,10 +403,14 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   invokeTrajectoryComputation: () => {
     const state = get();
-    invoke<TrajectoryResult>("compute_travel_time", { anchors: state.anchorPoints })
+    invoke<TrajectoryResult>("compute_travel_time", {
+      anchors: state.anchorPoints,
+      controlPoints: state.controlPoints
+    })
       .then(result => {
         set({ trajectory: result });
         set({ trajectoryTime: result.totalTime });
+        set({ trajectoryPlaybackTime: 0 });
       });
   },
 
