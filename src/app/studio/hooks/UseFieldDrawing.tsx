@@ -1,4 +1,4 @@
-import { useEffect, useRef, RefObject, useCallback, useState } from 'react';
+import { useEffect, useRef, RefObject, useCallback } from 'react';
 import { SelectedPoint, useStudioStore, Viewport } from '@/store/StudioStore';
 import { FIELD_CONFIG } from '@/config/config';
 import { AnchorPoint, ControlPoint, Vector2, SnapPoint } from '@/types';
@@ -93,7 +93,8 @@ const velocityToColor = (velocity: number, maxVelocity: number): string => {
   }
 
   const ratio = Math.min(velocity / maxVelocity, 1.0);
-  const hue = 240 * (1 - ratio);
+  const adjustedRatio = Math.pow(ratio, 1.5); // subtle bias toward blue
+  const hue = 240 * (1 - adjustedRatio);
   return `hsl(${hue}, 100%, 50%)`;
 };
 
@@ -288,9 +289,7 @@ const drawRotation = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint
     }
 
     drawRobot(ctx, inchToCanvas(getPointAtU(controlPoint.u).x, getPointAtU(controlPoint.u).y), rotation);
-
   }
-
 }
 
 const shortestAngleLerp = (aDeg: number, bDeg: number, t: number) => {
@@ -344,9 +343,6 @@ const drawMovingRobotOnTrajectory = (
   const pose = sampleRobotPose(trajectory, elapsedSeconds);
   if (!pose) return;
 
-  // Only show animated follow robot while it's moving.
-  if (pose.speed <= 0.05) return;
-
   drawRobot(ctx, inchToCanvas(pose.x, pose.y), pose.headingDeg);
 };
 
@@ -362,7 +358,7 @@ const drawRobot = (ctx: CanvasRenderingContext2D, position: Vector2, rotation: n
   ctx.rotate(rotation * Math.PI / 180);
 
   // --- Main body ---
-  ctx.fillStyle = '#6e1aa2';
+  ctx.fillStyle = '#1a1aa2';
   ctx.beginPath();
   ctx.roundRect(-ROBOT_LENGTH / 2, -ROBOT_WIDTH / 2, ROBOT_LENGTH, ROBOT_WIDTH, 2);
   ctx.fill();
@@ -380,7 +376,7 @@ const drawRobot = (ctx: CanvasRenderingContext2D, position: Vector2, rotation: n
   ];
 
   modules.forEach(({ x, y }) => {
-    ctx.fillStyle = '#3d0f5e';
+    ctx.fillStyle = '#0f175e';
     ctx.beginPath();
     ctx.roundRect(x - MODULE_SIZE / 2, y - MODULE_SIZE / 2, MODULE_SIZE, MODULE_SIZE, 1);
     ctx.fill();
@@ -427,11 +423,12 @@ export const useFieldDrawing = (
   const resetView = useStudioStore(state => state.resetView);
   const trajectory = useStudioStore(state => state.trajectory);
   const showingVelocity = useStudioStore(state => state.showingVelocity);
+  const trajectoryPlaybackTime = useStudioStore(state => state.trajectoryPlaybackTime);
+  const setTrajectoryPlaybackTime = useStudioStore(state => state.setTrajectoryPlaybackTime);
+  const isTrajectoryScrubbing = useStudioStore(state => state.isTrajectoryScrubbing);
   
   const snapPoints = useProjectStore(state => state.snapPoints);
   const snapEnabled = useProjectStore(state => state.snapEnabled);
-  const [animationClock, setAnimationClock] = useState(0);
-
   // Load field image
   useEffect(() => {
     const img = new Image();
@@ -451,19 +448,31 @@ export const useFieldDrawing = (
   // Animation ticker used for trajectory-follow robot playback.
   useEffect(() => {
     if (!showingVelocity || !trajectory || trajectory.pathPoints.length < 2 || trajectory.totalTime <= 0) {
-      setAnimationClock(0);
+      setTrajectoryPlaybackTime(0);
       return;
     }
 
     let animationFrameId = 0;
+    const startedAt = performance.now() / 1000;
+    const startPlaybackTime = trajectoryPlaybackTime;
     const tick = (nowMs: number) => {
-      setAnimationClock(nowMs / 1000);
+      if (!isTrajectoryScrubbing) {
+        const elapsed = nowMs / 1000 - startedAt;
+        const next = (startPlaybackTime + elapsed) % trajectory.totalTime;
+        setTrajectoryPlaybackTime(next);
+      }
       animationFrameId = requestAnimationFrame(tick);
     };
 
     animationFrameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [showingVelocity, trajectory]);
+  }, [
+    showingVelocity,
+    trajectory,
+    trajectoryPlaybackTime,
+    setTrajectoryPlaybackTime,
+    isTrajectoryScrubbing,
+  ]);
 
   // Memoized drawing function
   const draw = useCallback(() => {
@@ -498,7 +507,7 @@ export const useFieldDrawing = (
 
     // Draw robot
     if (showingVelocity && trajectory && trajectory.pathPoints.length > 1) {
-      drawMovingRobotOnTrajectory(ctx, trajectory, animationClock);
+      drawMovingRobotOnTrajectory(ctx, trajectory, trajectoryPlaybackTime);
     } else {
       drawRotation(ctx, controlPoints, getPointAtU, selectedPoint);
     }
@@ -516,7 +525,7 @@ export const useFieldDrawing = (
     snapEnabled,
     showingVelocity,
     trajectory,
-    animationClock,
+    trajectoryPlaybackTime,
   ]);
 
   // Drawing effect
