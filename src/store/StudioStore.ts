@@ -7,6 +7,32 @@ import { TrajectoryResult } from '@/types/PathPoint';
 import { invoke } from '@tauri-apps/api/core';
 
 type ActiveToolType = 'anchorTool' | 'controlTool';
+const HISTORY_LIMIT = 100;
+
+type StudioSnapshot = {
+  anchorPoints: AnchorPoint[];
+  controlPoints: ControlPoint[];
+  selectedPoint: SelectedPoint;
+};
+
+const createSnapshot = (state: Pick<StudioState, 'anchorPoints' | 'controlPoints' | 'selectedPoint'>): StudioSnapshot => ({
+  anchorPoints: structuredClone(state.anchorPoints),
+  controlPoints: structuredClone(state.controlPoints),
+  selectedPoint: state.selectedPoint ? { ...state.selectedPoint } : null
+});
+
+const withHistory = (
+  state: StudioState,
+  updater: (state: StudioState) => Partial<StudioState>
+): Partial<StudioState> => {
+  const nextState = updater(state);
+
+  return {
+    ...nextState,
+    historyPast: [...state.historyPast, createSnapshot(state)].slice(-HISTORY_LIMIT),
+    historyFuture: []
+  };
+};
 
 export type SelectedPoint = {
   type: 'anchor' | 'handleOut' | 'handleIn' | 'control' | 'snapPoint';
@@ -30,6 +56,8 @@ export interface StudioState {
   trajectoryPlaybackTime: number;
   isTrajectoryScrubbing: boolean;
   showingVelocity: boolean;
+  historyPast: StudioSnapshot[];
+  historyFuture: StudioSnapshot[];
 
   // Pan & Zoom
   viewport: Viewport;
@@ -43,6 +71,7 @@ export interface StudioState {
   // Anchor Point Actions
   addAnchorPoint: (point: Omit<AnchorPoint, 'name'>) => void;
   updateAnchorPoint: (id: number, updater: (current: AnchorPoint) => AnchorPoint) => void;
+  updateAnchorPointTransient: (id: number, updater: (current: AnchorPoint) => AnchorPoint) => void;
   deleteAnchorPoint: (id: number) => void;
   insertAnchorOnCurve: (segmentIndex: number, t: number) => void;
   toggleAnchorCurve: (id: number) => void;
@@ -50,6 +79,7 @@ export interface StudioState {
   // Control Point Actions
   addControlPoint: (point: Omit<ControlPoint, 'name'>) => void;
   updateControlPoint: (id: number, updates: Partial<ControlPoint>) => void;
+  updateControlPointTransient: (id: number, updates: Partial<ControlPoint>) => void;
   deleteControlPoint: (id: number) => void;
   
   // Attribute Actions
@@ -70,10 +100,15 @@ export interface StudioState {
   setTrajectoryPlaybackTime: (time: number) => void;
   setIsTrajectoryScrubbing: (scrubbing: boolean) => void;
   setShowingVelocity: (showing: boolean) => void;
+  captureHistorySnapshot: () => void;
+  undo: () => void;
+  redo: () => void;
 
   // Snap Point Actions
   snapAnchorToPoint: (anchorId: number, snapPointId: string, snapPointPosition: Vector2) => void;
+  snapAnchorToPointTransient: (anchorId: number, snapPointId: string, snapPointPosition: Vector2) => void;
   unsnapAnchor: (anchorId: number) => void;
+  unsnapAnchorTransient: (anchorId: number) => void;
 
 	//Panning
 	startPanning: (point: Vector2) => void;
@@ -108,9 +143,52 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   trajectoryPlaybackTime: 0,
   isTrajectoryScrubbing: false,
   showingVelocity: false,
+  historyPast: [],
+  historyFuture: [],
 
   setShowingVelocity(showing: boolean) {
     set({ showingVelocity: showing });
+  },
+
+  captureHistorySnapshot() {
+    set((state) => ({
+      historyPast: [...state.historyPast, createSnapshot(state)].slice(-HISTORY_LIMIT),
+      historyFuture: []
+    }));
+  },
+
+  undo() {
+    const state = get();
+    const previous = state.historyPast[state.historyPast.length - 1];
+    if (!previous) return;
+
+    const currentSnapshot = createSnapshot(state);
+    set({
+      anchorPoints: structuredClone(previous.anchorPoints),
+      controlPoints: structuredClone(previous.controlPoints),
+      selectedPoint: previous.selectedPoint ? { ...previous.selectedPoint } : null,
+      historyPast: state.historyPast.slice(0, -1),
+      historyFuture: [currentSnapshot, ...state.historyFuture].slice(0, HISTORY_LIMIT)
+    });
+
+    get().invokeTrajectoryComputation();
+  },
+
+  redo() {
+    const state = get();
+    const next = state.historyFuture[0];
+    if (!next) return;
+
+    const currentSnapshot = createSnapshot(state);
+    set({
+      anchorPoints: structuredClone(next.anchorPoints),
+      controlPoints: structuredClone(next.controlPoints),
+      selectedPoint: next.selectedPoint ? { ...next.selectedPoint } : null,
+      historyPast: [...state.historyPast, currentSnapshot].slice(-HISTORY_LIMIT),
+      historyFuture: state.historyFuture.slice(1)
+    });
+
+    get().invokeTrajectoryComputation();
   },
 
   setTrajectoryPlaybackTime(time: number) {
@@ -125,12 +203,20 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   // Anchor Point Actions
   addAnchorPoint: (point) => {
-    set((state) => ({
+    set((state) => withHistory(state, () => ({
       anchorPoints: [...state.anchorPoints, { ...point, name: '' }]
-    }));
+    })));
   },
 
   updateAnchorPoint: (id, updater) => {
+    set((state) => withHistory(state, () => ({
+      anchorPoints: state.anchorPoints.map((point, index) =>
+        index === id ? updater(point) : point
+      )
+    })));
+  },
+
+  updateAnchorPointTransient: (id, updater) => {
     set((state) => ({
       anchorPoints: state.anchorPoints.map((point, index) =>
         index === id ? updater(point) : point
@@ -139,10 +225,10 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   },
 
   deleteAnchorPoint: (id) => {
-    set((state) => ({
+    set((state) => withHistory(state, () => ({
       anchorPoints: state.anchorPoints.filter((_, index) => index !== id),
       selectedPoint: state.selectedPoint?.type === 'anchor' && state.selectedPoint.id === id ? null : state.selectedPoint
-    }));
+    })));
   },
 
   insertAnchorOnCurve: (segmentIndex, t) => {
@@ -197,30 +283,37 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       newAnchorPoints[segmentIndex + 1] = updatedNext;
       newAnchorPoints.splice(segmentIndex + 1, 0, newAnchor);
       
-      return {
-        ...state,
+      return withHistory(state, () => ({
         anchorPoints: newAnchorPoints
-      };
+      }));
     });
   },
 
   toggleAnchorCurve: (id) => {
     
-    set((state) => ({
+    set((state) => withHistory(state, () => ({
       anchorPoints: state.anchorPoints.map((point, index) =>
         index === id ? { ...point, isCurved: !point.isCurved, handleInOffset: !point.isCurved ? { x: -30, y: 0 } : { x: 0, y: 0 }, handleOutOffset: !point.isCurved ? { x: 30, y: 0 } : { x: 0, y: 0 } } : point
       )
-    }));
+    })));
   },
 
   // Control Point Actions
   addControlPoint: (point) => {
-    set((state) => ({
+    set((state) => withHistory(state, () => ({
       controlPoints: [...state.controlPoints, { ...point, name: '' }]
-    }));
+    })));
   },
 
   updateControlPoint: (id, updates) => {
+    set((state) => withHistory(state, () => ({
+      controlPoints: state.controlPoints.map(cp =>
+        cp.id === id ? { ...cp, ...updates } : cp
+      )
+    })));
+  },
+
+  updateControlPointTransient: (id, updates) => {
     set((state) => ({
       controlPoints: state.controlPoints.map(cp =>
         cp.id === id ? { ...cp, ...updates } : cp
@@ -229,10 +322,10 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   },
 
   deleteControlPoint: (id) => {
-    set((state) => ({
+    set((state) => withHistory(state, () => ({
       controlPoints: state.controlPoints.filter(cp => cp.id !== id),
       selectedPoint: state.selectedPoint?.type === 'control' && state.selectedPoint.id === id ? null : state.selectedPoint
-    }));
+    })));
   },
 
   // Selection & UI Actions
@@ -341,17 +434,17 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   // Attribute Actions
   addAttribute: (pointId, attribute) => {
-    set((state) => ({
+    set((state) => withHistory(state, () => ({
       controlPoints: state.controlPoints.map(cp =>
         cp.id === pointId
           ? { ...cp, attributes: [...cp.attributes, attribute] }
           : cp
       )
-    }));
+    })));
   },
 
   updateAttribute: (pointId, attrIndex, updates) => {
-    set((state) => ({
+    set((state) => withHistory(state, () => ({
       controlPoints: state.controlPoints.map(cp =>
         cp.id === pointId
           ? {
@@ -362,11 +455,11 @@ export const useStudioStore = create<StudioState>((set, get) => ({
             }
           : cp
       )
-    }));
+    })));
   },
 
   removeAttribute: (pointId, attrIndex) => {
-    set((state) => ({
+    set((state) => withHistory(state, () => ({
       controlPoints: state.controlPoints.map(cp =>
         cp.id === pointId
           ? {
@@ -375,11 +468,21 @@ export const useStudioStore = create<StudioState>((set, get) => ({
             }
           : cp
       )
-    }));
+    })));
   },
 
   // Snap Point Actions
   snapAnchorToPoint: (anchorId, snapPointId, snapPointPosition) => {
+    set((state) => withHistory(state, () => ({
+      anchorPoints: state.anchorPoints.map((anchor, index) =>
+        index === anchorId
+          ? { ...anchor, position: { ...snapPointPosition }, snapPointId }
+          : anchor
+      )
+    })));
+  },
+
+  snapAnchorToPointTransient: (anchorId, snapPointId, snapPointPosition) => {
     set((state) => ({
       anchorPoints: state.anchorPoints.map((anchor, index) =>
         index === anchorId
@@ -390,10 +493,24 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   },
 
   unsnapAnchor: (anchorId) => {
+    set((state) => withHistory(state, () => ({
+      anchorPoints: state.anchorPoints.map((anchor, index) => {
+        if (index === anchorId) {
+          const rest = { ...anchor };
+          delete rest.snapPointId;
+          return rest;
+        }
+        return anchor;
+      })
+    })));
+  },
+
+  unsnapAnchorTransient: (anchorId) => {
     set((state) => ({
       anchorPoints: state.anchorPoints.map((anchor, index) => {
         if (index === anchorId) {
-          const { snapPointId, ...rest } = anchor;
+          const rest = { ...anchor };
+          delete rest.snapPointId;
           return rest;
         }
         return anchor;
@@ -415,7 +532,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   },
 
   // Load/Save Actions
-  setAnchorPoints: (points) => set({ anchorPoints: points }),
-  setControlPoints: (points) => set({ controlPoints: points }),
+  setAnchorPoints: (points) => set({ anchorPoints: points, historyPast: [], historyFuture: [] }),
+  setControlPoints: (points) => set({ controlPoints: points, historyPast: [], historyFuture: [] }),
   setTrajectory: (trajectory) => set({ trajectory })
 }));

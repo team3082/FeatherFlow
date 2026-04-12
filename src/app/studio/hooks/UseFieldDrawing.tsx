@@ -288,7 +288,7 @@ const drawRotation = (ctx: CanvasRenderingContext2D, controlPoints: ControlPoint
       return;
     }
 
-    drawRobot(ctx, inchToCanvas(getPointAtU(controlPoint.u).x, getPointAtU(controlPoint.u).y), rotation);
+    drawRobot(ctx, inchToCanvas(getPointAtU(controlPoint.u).x, getPointAtU(controlPoint.u).y), rotation, 0.5);
   }
 }
 
@@ -346,7 +346,7 @@ const drawMovingRobotOnTrajectory = (
   drawRobot(ctx, inchToCanvas(pose.x, pose.y), pose.headingDeg);
 };
 
-const drawRobot = (ctx: CanvasRenderingContext2D, position: Vector2, rotation: number) => {
+const drawRobot = (ctx: CanvasRenderingContext2D, position: Vector2, rotation: number, opacity: number = 1) => {
   const ROBOT_WIDTH = 32;
   const ROBOT_LENGTH = 32;
   const MODULE_SIZE = 8;
@@ -354,7 +354,8 @@ const drawRobot = (ctx: CanvasRenderingContext2D, position: Vector2, rotation: n
   const MODULE_OFFSET_Y = ROBOT_WIDTH / 2 - MODULE_SIZE / 2;
 
   ctx.save();
-  ctx.translate(position.x, position.y);
+  ctx.globalAlpha = opacity;
+  ctx.translate(position.x, position.y);  
   ctx.rotate(rotation * Math.PI / 180);
 
   // --- Main body ---
@@ -495,6 +496,7 @@ export const useFieldDrawing = (
     // Draw paths or velocity profile directly on the canvas.
     if (showingVelocity && trajectory && trajectory.pathPoints.length > 1) {
       drawVelocityProfilePath(ctx, trajectory.pathPoints);
+      drawMovingRobotOnTrajectory(ctx, trajectory, trajectoryPlaybackTime);
     } else {
       drawPaths(ctx, anchorPoints);
     }
@@ -505,11 +507,10 @@ export const useFieldDrawing = (
     // Draw control points
     drawControlPoints(ctx, controlPoints, selectedPoint, getPointAtU);
 
-    // Draw robot
+    // Draw  robot
+    drawRotation(ctx, controlPoints, getPointAtU, selectedPoint);
     if (showingVelocity && trajectory && trajectory.pathPoints.length > 1) {
       drawMovingRobotOnTrajectory(ctx, trajectory, trajectoryPlaybackTime);
-    } else {
-      drawRotation(ctx, controlPoints, getPointAtU, selectedPoint);
     }
 
     //Restore

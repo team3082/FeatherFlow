@@ -18,8 +18,8 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
   const setSelectedPoint = useStudioStore(state => state.setSelectedPoint);
   const setIsDragging = useStudioStore(state => state.setIsDragging);
   const setCursorPosition = useStudioStore(state => state.setCursorPosition);
-  const updateAnchorPoint = useStudioStore(state => state.updateAnchorPoint);
-  const updateControlPoint = useStudioStore(state => state.updateControlPoint);
+  const updateAnchorPointTransient = useStudioStore(state => state.updateAnchorPointTransient);
+  const updateControlPointTransient = useStudioStore(state => state.updateControlPointTransient);
   const addAnchorPoint = useStudioStore(state => state.addAnchorPoint);
   const addControlPoint = useStudioStore(state => state.addControlPoint);
   const deleteAnchorPoint = useStudioStore(state => state.deleteAnchorPoint);
@@ -30,9 +30,14 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
   const stopPanning = useStudioStore(state => state.stopPanning);
   const insertAnchorOnCurve = useStudioStore(state => state.insertAnchorOnCurve);
   const invokeTrajectoryComputation = useStudioStore(state => state.invokeTrajectoryComputation);
+  const captureHistorySnapshot = useStudioStore(state => state.captureHistorySnapshot);
+  const undo = useStudioStore(state => state.undo);
+  const redo = useStudioStore(state => state.redo);
+  const canUndo = useStudioStore(state => state.historyPast.length > 0);
+  const canRedo = useStudioStore(state => state.historyFuture.length > 0);
   
-  const snapAnchorToPoint = useStudioStore(state => state.snapAnchorToPoint);
-  const unsnapAnchor = useStudioStore(state => state.unsnapAnchor);
+  const snapAnchorToPointTransient = useStudioStore(state => state.snapAnchorToPointTransient);
+  const unsnapAnchorTransient = useStudioStore(state => state.unsnapAnchorTransient);
 
   const snapPoints = useProjectStore(state => state.snapPoints);
   const snapEnabled = useProjectStore(state => state.snapEnabled);
@@ -93,18 +98,20 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
       if (!isSelected) continue;
 
       if (Math.hypot(x - (anchor.position.x + anchor.handleOutOffset.x), y - (anchor.position.y + anchor.handleOutOffset.y)) < 5) {
+        captureHistorySnapshot();
         setSelectedPoint({ type: 'handleOut', id: i });
         setIsDragging(true);
         return true;
       }
       if (Math.hypot(x - (anchor.position.x + anchor.handleInOffset.x), y - (anchor.position.y + anchor.handleInOffset.y)) < 5) {
+        captureHistorySnapshot();
         setSelectedPoint({ type: 'handleIn', id: i });
         setIsDragging(true);
         return true;
       }
     }
     return false;
-  }, [activeTool, anchorPoints, selectedPoint, setSelectedPoint, setIsDragging]);
+  }, [activeTool, anchorPoints, selectedPoint, setSelectedPoint, setIsDragging, captureHistorySnapshot]);
 
   const checkSnapPointInteraction = useCallback((x: number, y: number): boolean => {
     if (activeTool !== 'anchorTool') return false;
@@ -113,13 +120,14 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     for (const snapPoint of snapPoints) {
       const distance = Math.hypot(x - snapPoint.position.x, y - snapPoint.position.y);
       if (distance < 5 && !snapPoint.locked) {
+        captureHistorySnapshot();
         setSelectedPoint({ type: 'snapPoint', id: snapPoint.id });
         setIsDragging(true);
         return true;
       }
     }
     return false;
-  }, [activeTool, snapPoints, setSelectedPoint, setIsDragging]);
+  }, [activeTool, snapPoints, setSelectedPoint, setIsDragging, captureHistorySnapshot]);
 
   const checkAnchorInteraction = useCallback((x: number, y: number): boolean => {
     if (activeTool !== 'anchorTool') return false;
@@ -128,13 +136,14 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     for (let i = 0; i < anchorPoints.length; i++) {
       const anchor = anchorPoints[i];
       if (Math.hypot(x - anchor.position.x, y - anchor.position.y) < 5) {
+        captureHistorySnapshot();
         setSelectedPoint({ type: 'anchor', id: i });
         setIsDragging(true);
         return true;
       }
     }
     return false;
-  }, [activeTool, anchorPoints, setSelectedPoint, setIsDragging]);
+  }, [activeTool, anchorPoints, setSelectedPoint, setIsDragging, captureHistorySnapshot]);
 
   const checkControlInteraction = useCallback((x: number, y: number): boolean => {
     if (activeTool !== 'controlTool') return false;
@@ -143,13 +152,14 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     for (const point of controlPoints) {
       const pos = getPointAtU(point.u);
       if (pos && Math.hypot(x - pos.x, y - pos.y) < 5) {
+        captureHistorySnapshot();
         setSelectedPoint({ type: 'control', id: point.id });
         setIsDragging(true);
         return true;
       }
     }
     return false;
-  }, [activeTool, controlPoints, getPointAtU, setSelectedPoint, setIsDragging]);
+  }, [activeTool, controlPoints, getPointAtU, setSelectedPoint, setIsDragging, captureHistorySnapshot]);
 
   const checkCurveInteraction = useCallback((x: number, y: number, shiftKey: boolean): boolean => {
     if (activeTool !== 'anchorTool' || !shiftKey) return false;
@@ -296,16 +306,16 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
         
         if (nearbySnapPoint) {
           // Snap to snap point
-          snapAnchorToPoint(selectedPoint.id, nearbySnapPoint.id, nearbySnapPoint.position);
+          snapAnchorToPointTransient(selectedPoint.id, nearbySnapPoint.id, nearbySnapPoint.position);
           
         } else {
           // Normal movement - remove snap if it exists
           const anchor = anchorPoints[selectedPoint.id];
           if (anchor?.snapPointId) {
-            unsnapAnchor(selectedPoint.id);
+            unsnapAnchorTransient(selectedPoint.id);
           }
           
-          updateAnchorPoint(selectedPoint.id, (current) => ({
+          updateAnchorPointTransient(selectedPoint.id, (current) => ({
             ...current,
             position: { x, y }
           }));
@@ -313,7 +323,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
       } else if (selectedPoint.type === 'control' && typeof selectedPoint.id === 'number') {
         const newU = findClosestU(x, y);
         if (newU !== null) {
-          updateControlPoint(selectedPoint.id, { u: newU });
+          updateControlPointTransient(selectedPoint.id, { u: newU });
         }
       } else if (selectedPoint.type === 'handleOut' && typeof selectedPoint.id === 'number') {
         const anchor = anchorPoints[selectedPoint.id];
@@ -323,7 +333,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
           const inMag = Math.sqrt(anchor.handleInOffset.x * anchor.handleInOffset.x + anchor.handleInOffset.y * anchor.handleInOffset.y);
           const outMag = Math.sqrt(dx * dx + dy * dy);
 
-          updateAnchorPoint(selectedPoint.id, (current) => ({
+          updateAnchorPointTransient(selectedPoint.id, (current) => ({
             ...current,
             handleOutOffset: { x: dx, y: dy },
             handleInOffset: {
@@ -340,7 +350,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
           const outMag = Math.sqrt(anchor.handleOutOffset.x * anchor.handleOutOffset.x + anchor.handleOutOffset.y * anchor.handleOutOffset.y);
           const inMag = Math.sqrt(dx * dx + dy * dy);
 
-          updateAnchorPoint(selectedPoint.id, (current) => ({
+          updateAnchorPointTransient(selectedPoint.id, (current) => ({
             ...current,
             handleInOffset: { x: dx, y: dy },
             handleOutOffset: {
@@ -351,7 +361,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
         }
       }
     }
-  }, [canvasRef, viewport, isDragging, selectedPoint, setCursorPosition, updateAnchorPoint, updateControlPoint, findClosestU, anchorPoints, isPanning, updatePanning, snapPoints, findNearbySnapPoint, snapAnchorToPoint, unsnapAnchor]);
+  }, [canvasRef, viewport, isDragging, selectedPoint, setCursorPosition, updateAnchorPointTransient, updateControlPointTransient, findClosestU, anchorPoints, isPanning, updatePanning, snapPoints, findNearbySnapPoint, snapAnchorToPointTransient, unsnapAnchorTransient, syncAnchorsToSnapPoint]);
   
   const handleMouseUp = useCallback(async () => {
     // Capture the state before clearing
@@ -373,9 +383,37 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
     }
   }, [setIsDragging, stopPanning, invokeTrajectoryComputation, isDragging, selectedPoint]);
 
-  // Keyboard event handler for deleting points
+  // Keyboard event handler for undo/redo and deleting points
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isEditable = !!target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      );
+
+      if (isEditable) return;
+
+      const isMod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      if (isMod && key === 'z' && !e.shiftKey) {
+        if (canUndo) {
+          e.preventDefault();
+          undo();
+        }
+        return;
+      }
+
+      if (isMod && (key === 'y' || (key === 'z' && e.shiftKey))) {
+        if (canRedo) {
+          e.preventDefault();
+          redo();
+        }
+        return;
+      }
+
       if ((e.key === 'Delete' || e.key === 'Backspace') && e.shiftKey && selectedPoint) {
         e.preventDefault();
 
@@ -391,7 +429,7 @@ export function useFieldInteraction(canvasRef: React.RefObject<HTMLCanvasElement
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPoint, anchorPoints, controlPoints, setSelectedPoint, deleteAnchorPoint, deleteControlPoint]);
+  }, [selectedPoint, anchorPoints, controlPoints, setSelectedPoint, deleteAnchorPoint, deleteControlPoint, canUndo, canRedo, undo, redo]);
 
   // Attach mouse event listeners
   useEffect(() => {
