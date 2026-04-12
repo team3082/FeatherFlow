@@ -13,7 +13,7 @@ FeatherFlow is a modern desktop application for creating and visualizing autonom
 ### Interactive Path Studio
 - **Visual Canvas Editor**: Drag-and-drop path creation with real-time field visualization
 - **Zoom & Pan Controls**: Navigate large field layouts with smooth zooming and panning
-- **2025 Reefscape Field**: Pre-configured for the current FRC game field dimensions
+- **2026 Rebuilt Field**: Pre-configured for the current FRC game field dimensions
 - **Real-time Path Preview**: Instant visual feedback as you build paths
 
 ### Dual-Point Architecture
@@ -22,6 +22,7 @@ FeatherFlow is a modern desktop application for creating and visualizing autonom
   - **Rotate Points**: Specify robot heading changes
   - **Stop Points**: Define controlled stops with duration
   - **Command Points**: Execute custom robot actions
+  - **Motion Points**: Define max speed of segments
 
 ### Advanced Editing Tools
 - **Curve Handles**: Intuitive Bezier curve manipulation with aligned handles
@@ -48,7 +49,7 @@ FeatherFlow Architecture
 └── Core Mathematics
     ├── Bezier Curve Engine
     ├── Coordinate Conversion
-    └── Path Optmization (In Rust)
+    └── Path Velocity Profiling
 ```
 
 ### Core Components
@@ -80,13 +81,14 @@ FeatherFlow is actively being developed with core functionality in place:
 - Point selection and properties editing
 - Project management with save/load capabilities
 - Real-time path visualization
-
-### In Development
 - Path export to wplib
 - Advanced control point behaviors
 - Timeline-based path sequencing
 - Physics simulation and validation
-- Multi-path autonomous routines
+
+### Goals
+- Digramable Commands
+- Ctrl-Z
 
 ## Development Setup
 
@@ -96,10 +98,11 @@ FeatherFlow is actively being developed with core functionality in place:
 - npm/yarn/pnpm
 
 ### Getting Started
+Make sure you have NodeJs and Rust installed
 
 ```bash
 # Clone the repository
-git clone https://github.com/EmilioMGithub/FeatherFlow.git
+git clone https://github.com/team3082/FeatherFlow.git
 cd FeatherFlow
 
 # Install dependencies
