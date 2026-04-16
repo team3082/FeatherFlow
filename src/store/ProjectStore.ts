@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AutoRoutine, SnapPoint, ProjectConfig, defaultProjectConfig } from '@/types';
+import { AutoRoutine, SnapPoint, ProjectConfig, DeployCommandDefinition } from '@/types';
 import { useStudioStore } from './StudioStore';
 import { 
   writeTextFile, 
@@ -17,6 +17,7 @@ export interface ProjectState {
 
   routines: AutoRoutine[];
   currentRoutineId: string | null;
+  deployCommands: DeployCommandDefinition[];
 
   // Snap Points (from global config)
   snapPoints: SnapPoint[];
@@ -26,6 +27,7 @@ export interface ProjectState {
   // Snap Point Management
   loadConfig: () => Promise<void>;
   saveConfig: () => Promise<void>;
+  loadDeployCommands: () => Promise<void>;
   addSnapPoint: (snapPoint: Omit<SnapPoint, 'id'>) => Promise<void>;
   updateSnapPoint: (id: string, updates: Partial<SnapPoint>) => Promise<void>;
   deleteSnapPoint: (id: string) => Promise<void>;
@@ -71,9 +73,91 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   isProjectLoaded: false,
   routines: [],
   currentRoutineId: null,
+  deployCommands: [],
   snapPoints: [],
   snapEnabled: true,
   snapRadius: 6,
+
+  loadDeployCommands: async () => {
+    const state = get();
+    if (!state.projectPath) return;
+
+    const deployRoot = `${state.projectPath}/src/main/deploy`;
+
+    try {
+      const deployExists = await exists(deployRoot);
+      if (!deployExists) {
+        set({ deployCommands: [] });
+        return;
+      }
+
+      const entries = await readDir(deployRoot);
+      const loadedCommands: DeployCommandDefinition[] = [];
+
+      for (const entry of entries) {
+        if (!entry.name || !entry.name.toLowerCase().endsWith('.json')) {
+          continue;
+        }
+
+        const filePath = `${deployRoot}/${entry.name}`;
+
+        try {
+          const content = await readTextFile(filePath);
+          const parsed = JSON.parse(content);
+
+          if (!Array.isArray(parsed)) {
+            continue;
+          }
+
+          for (const rawCommand of parsed) {
+            if (!rawCommand || typeof rawCommand !== 'object') {
+              continue;
+            }
+
+            const candidate = rawCommand as {
+              name?: unknown;
+              parameters?: unknown;
+            };
+
+            if (typeof candidate.name !== 'string' || candidate.name.trim().length === 0) {
+              continue;
+            }
+
+            const parameters = Array.isArray(candidate.parameters)
+              ? candidate.parameters.reduce<{ name: string; type: string }[]>((result, parameter) => {
+                  if (
+                    parameter &&
+                    typeof parameter === 'object' &&
+                    typeof (parameter as { name?: unknown }).name === 'string' &&
+                    typeof (parameter as { type?: unknown }).type === 'string'
+                  ) {
+                    result.push({
+                      name: (parameter as { name: string }).name,
+                      type: (parameter as { type: string }).type,
+                    });
+                  }
+
+                  return result;
+                }, [])
+              : [];
+
+            loadedCommands.push({
+              name: candidate.name,
+              parameters,
+              sourceFile: entry.name,
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to parse deploy command manifest ${filePath}:`, error);
+        }
+      }
+
+      set({ deployCommands: loadedCommands });
+    } catch (error) {
+      console.error('Failed to load deploy commands:', error);
+      set({ deployCommands: [] });
+    }
+  },
 
   // Snap Point Management
   loadConfig: async () => {
@@ -318,21 +402,23 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       set({ 
         projectPath, 
         isProjectLoaded: true, 
-        routines: loadedRoutines
+        routines: loadedRoutines,
+        deployCommands: []
       });
       
       // Load config after loading routines
       await get().loadConfig();
+      await get().loadDeployCommands();
       
       console.log(`Loaded ${loadedRoutines.length} routines from ${projectPath}`);
     } catch (error) {
       console.error('Failed to load project:', error);
-      set({ projectPath, isProjectLoaded: true, routines: [] });
+      set({ projectPath, isProjectLoaded: true, routines: [], deployCommands: [] });
     }
   },
 
   unloadProject: () => {
-    set({ projectPath: null, isProjectLoaded: false, routines: [], currentRoutineId: null });
+    set({ projectPath: null, isProjectLoaded: false, routines: [], deployCommands: [], currentRoutineId: null });
   },
 
   getCurrentRoutineName: () => {

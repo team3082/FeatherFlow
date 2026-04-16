@@ -85,10 +85,10 @@ FeatherFlow is actively being developed with core functionality in place:
 - Advanced control point behaviors
 - Timeline-based path sequencing
 - Physics simulation and validation
+- Ctrl-Z
 
 ### Goals
 - Digramable Commands
-- Ctrl-Z
 
 ## Development Setup
 

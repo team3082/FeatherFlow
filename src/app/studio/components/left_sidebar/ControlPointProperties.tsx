@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useStudioStore } from "@/store/StudioStore";
 import { Trash } from "lucide-react";
+import { usePathname, useRouter } from 'next/navigation';
 
 export default function ControlPointProperties() {
   const selectedPoint = useStudioStore(state => state.selectedPoint);
@@ -11,6 +12,13 @@ export default function ControlPointProperties() {
   const addAttribute = useStudioStore(state => state.addAttribute);
   const updateAttribute = useStudioStore(state => state.updateAttribute);
   const removeAttribute = useStudioStore(state => state.removeAttribute);
+
+  const router = useRouter();
+  const pathname = usePathname();
+  
+  const handleNavigation = (path: string) => {
+    router.push(path);
+  };
 
   const [showAttributeMenu, setShowAttributeMenu] = useState<boolean>(false);
 
@@ -140,6 +148,12 @@ export default function ControlPointProperties() {
                 `}
               >
                 {attr.stopping ? 'Stopping Command' : 'Non-Stopping Command'}
+              </button>
+            <button
+                onClick={() => handleNavigation('/command')}
+                className="text-white hover:text-gray-300 transition-colors font-medium"
+              >
+                  Command Link
               </button>
             </>
           )}
