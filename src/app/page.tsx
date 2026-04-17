@@ -27,7 +27,7 @@ export default function Home() {
       <div className="absolute inset-0 bg-[#0a0e1a]" />
 
       {/* Floating dots background */}
-      <AmbientDots count={48} />
+      {/* <AmbientDots count={48} /> */}
 
       {/* Main content */}
       <div className="relative z-10 text-center max-w-2xl px-6">
