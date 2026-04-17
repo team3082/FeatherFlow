@@ -585,7 +585,60 @@ fn generate_path_points(anchors: &[AnchorPoint]) -> (Vec<PathPoint>, Vec<f64>) {
         }
     }
 
+    annotate_discrete_curvature(&mut path);
+
     (path, sample_ts)
+}
+
+/// Adds discrete curvature estimates from neighboring samples.
+///
+/// This captures sharp heading changes at anchor joins (for example when Bezier handles
+/// are zero), where analytic per-segment Bezier curvature can remain near zero.
+fn annotate_discrete_curvature(path: &mut [PathPoint]) {
+    if path.len() < 3 {
+        return;
+    }
+
+    let mut estimated = vec![0.0; path.len()];
+
+    for i in 1..path.len() - 1 {
+        let p_prev = Vector2 {
+            x: path[i - 1].x,
+            y: path[i - 1].y,
+        };
+        let p_curr = Vector2 {
+            x: path[i].x,
+            y: path[i].y,
+        };
+        let p_next = Vector2 {
+            x: path[i + 1].x,
+            y: path[i + 1].y,
+        };
+
+        let a = p_curr - p_prev;
+        let b = p_next - p_curr;
+        let c = p_next - p_prev;
+
+        let a_len = a.magnitude();
+        let b_len = b.magnitude();
+        let c_len = c.magnitude();
+        if a_len <= crate::EPSILON || b_len <= crate::EPSILON || c_len <= crate::EPSILON {
+            continue;
+        }
+
+        let cross = a.x * b.y - a.y * b.x;
+        let kappa = (2.0 * cross.abs()) / (a_len * b_len * c_len);
+        estimated[i] = kappa;
+    }
+
+    for (i, point) in path.iter_mut().enumerate() {
+        if estimated[i] > point.curvature.abs() {
+            point.curvature = point.curvature.signum() * estimated[i];
+            if point.curvature == 0.0 {
+                point.curvature = estimated[i];
+            }
+        }
+    }
 }
 
 /// Inverts an arc-length lookup table to find Bezier `t` for a target traveled distance.
