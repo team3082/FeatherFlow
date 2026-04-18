@@ -13,7 +13,7 @@ export default function ControlPointsList() {
 
 	return (
 		<div>
-			<div className="text-xs font-semibold text-gray-300 mb-2 flex items-center gap-1.5">
+			<div className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-1.5">
 				CONTROL POINTS ({controlPoints.length})
 			</div>
 			<div className="flex flex-col gap-1.5">

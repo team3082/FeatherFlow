@@ -14,7 +14,7 @@ export default function AnchorPointsList() {
 
 	return (
 		<div className="mb-6">
-			<div className="text-xs font-semibold text-gray-300 mb-2 flex items-center gap-1.5">
+			<div className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-1.5">
 				ANCHOR POINTS ({anchorPoints.length})
 			</div>
 			<div className="flex flex-col gap-1.5">
@@ -39,7 +39,7 @@ export default function AnchorPointsList() {
 								<div className="text-sm font-semibold mb-0.5 flex items-center gap-1.5">
 									{point.name || `Anchor ${index + 1}`}
 									{snappedPoint && (
-										<span className="inline-flex items-center gap-1 text-xs text-white-400">
+										<span className="inline-flex items-center gap-1 text-xs text-gray-400">
 											<Link className="w-3 h-3" />
 											{snappedPoint.name}
 										</span>

@@ -1,6 +1,5 @@
 'use client';
 
-import AmbientDots from "@/components/AmbientDots";
 import { useProjectStore } from "@/store/ProjectStore";
 import { useRouter } from "next/navigation";
 
@@ -25,9 +24,6 @@ export default function Home() {
       className={`relative flex min-h-screen flex-col items-center justify-center bg-gray-900 text-gray-100 overflow-hidden`}
     >
       <div className="absolute inset-0 bg-[#0a0e1a]" />
-
-      {/* Floating dots background */}
-      {/* <AmbientDots count={48} /> */}
 
       {/* Main content */}
       <div className="relative z-10 text-center max-w-2xl px-6">
