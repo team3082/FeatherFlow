@@ -150,6 +150,16 @@ pub(crate) fn stop_duration_at_t(actions: &[ActionDescriptor], t: f64) -> f64 {
         .sum::<f64>()
 }
 
+pub(crate) fn rotate_heading_at_t(actions: &[ActionDescriptor], t: f64) -> Option<f64> {
+    actions
+        .iter()
+        .filter_map(|action| match action.kind {
+            ActionKind::Rotate { heading } if (action.t - t).abs() < 1e-6 => Some(heading.to_radians()),
+            _ => None,
+        })
+        .last()
+}
+
 pub(crate) fn build_rotate_keyframes_by_distance(
     full_path: &[crate::types::PathPoint],
     sample_ts: &[f64],
@@ -180,13 +190,30 @@ pub(crate) fn build_rotate_keyframes_by_distance(
         return Vec::new();
     }
 
-    keyframes_t_heading
+    let mut by_distance: Vec<(f64, f64)> = keyframes_t_heading
         .into_iter()
         .map(|(t, heading)| {
             let dist = interpolate_distance_at_t(full_path, sample_ts, t);
             (dist, heading)
         })
-        .collect()
+        .collect();
+
+    by_distance.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Multiple rotate controls can collapse to the same geometric distance at a stop.
+    // Keep only the last heading for that location to avoid interpolation discontinuities.
+    let mut deduped: Vec<(f64, f64)> = Vec::with_capacity(by_distance.len());
+    for (d, h) in by_distance {
+        if let Some(last) = deduped.last_mut() {
+            if (last.0 - d).abs() < crate::EPSILON {
+                last.1 = h;
+                continue;
+            }
+        }
+        deduped.push((d, h));
+    }
+
+    deduped
 }
 
 fn interpolate_distance_at_t(full_path: &[crate::types::PathPoint], sample_ts: &[f64], t: f64) -> f64 {

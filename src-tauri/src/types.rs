@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 fn default_false() -> bool {
     false
@@ -136,4 +137,71 @@ pub enum ControlPointAttribute {
         #[serde(default = "default_zero")]
         acceleration: f64,
     },
+}
+
+// ==================== Compiled Trajectory Structures ====================
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CompiledTrajectoryFile {
+    pub format_version: i32,
+    pub source_routine_id: String,
+    pub source_routine_name: String,
+    pub generated_at_utc: String,
+    pub generator_version: String,
+    pub coordinate_frame: CoordinateFrameMetadata,
+    pub variants: CompiledVariants,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinateFrameMetadata {
+    pub units: String,
+    pub origin: String,
+    pub heading_convention: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CompiledVariants {
+    pub normal: CompiledTrajectoryVariant,
+    pub flipped: CompiledTrajectoryVariant,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CompiledTrajectoryVariant {
+    pub total_time: f64,
+    pub total_distance: f64,
+    pub segments: Vec<CompiledSegment>,
+    pub events: Vec<CompiledEvent>,
+    pub metadata: VariantMetadata,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CompiledSegment {
+    pub segment_index: i32,
+    pub start_t: f64,
+    pub end_t: f64,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub path_points: Vec<PathPoint>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CompiledEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub t: f64,
+    pub time: f64,
+    pub payload: Value,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct VariantMetadata {
+    pub sample_count: usize,
+    pub split_ts: Vec<f64>,
 }

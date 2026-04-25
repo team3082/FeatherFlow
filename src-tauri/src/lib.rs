@@ -1,5 +1,5 @@
 const MAX_TRANSLATIONAL_VELOCITY: f64 = 170.0;
-const MAX_ROTATIONAL_VELOCITY: f64 = 3.0;
+const MAX_ROTATIONAL_VELOCITY: f64 = 5.0;
 const MAX_WHEEL_SPEED: f64 = 170.0;
 const MAX_ACCELERATION: f64 = 170.0;
 const MAX_LATERAL_ACCELERATION: f64 = 170.0;
@@ -13,7 +13,7 @@ mod controls;
 mod types;
 mod trajectory;
 
-use types::{AnchorPoint, ControlPoint, TrajectoryResult};
+use types::{AnchorPoint, ControlPoint, TrajectoryResult, CompiledTrajectoryFile};
 
 #[tauri::command]
 fn compute_travel_time(
@@ -21,6 +21,23 @@ fn compute_travel_time(
     control_points: Option<Vec<ControlPoint>>,
 ) -> TrajectoryResult {
     trajectory::compute_travel_time(anchors, control_points)
+}
+
+#[tauri::command]
+fn compile_routine_runtime(
+    anchors: Vec<AnchorPoint>,
+    control_points: Option<Vec<ControlPoint>>,
+    routine_id: String,
+    routine_name: String,
+    generator_version: String,
+) -> CompiledTrajectoryFile {
+    trajectory::compile_routine_runtime(
+        anchors,
+        control_points,
+        routine_id,
+        routine_name,
+        generator_version,
+    )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -38,7 +55,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![compute_travel_time])
+        .invoke_handler(tauri::generate_handler![compute_travel_time, compile_routine_runtime])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

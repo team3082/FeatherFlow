@@ -40,4 +40,19 @@ export interface AutoRoutine {
    * When this routine was last modified
    */
   lastModified: Date;
+
+  /**
+   * Format version of compiled artifact (if available)
+   */
+  compiledVersion?: number;
+
+  /**
+   * When compiled artifact was last generated
+   */
+  compiledAt?: Date;
+
+  /**
+   * Filename of compiled artifact
+   */
+  compiledFileName?: string;
 }

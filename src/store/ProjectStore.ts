@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AutoRoutine, SnapPoint, ProjectConfig, DeployCommandDefinition } from '@/types';
+import { AutoRoutine, SnapPoint, ProjectConfig, DeployCommandDefinition, CompiledTrajectoryFile } from '@/types';
 import { useStudioStore } from './StudioStore';
 import { 
   writeTextFile, 
@@ -10,6 +10,7 @@ import {
   mkdir
 } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface ProjectState {
   projectPath: string | null;
@@ -395,6 +396,23 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           routine.created = new Date(routine.created);
           routine.lastModified = new Date(routine.lastModified);
           
+          // Check for matching compiled artifact
+          const baseName = entry.name.replace('.ff', '');
+          const compiledPath = `${routinesPath}/${baseName}.fftraj.json`;
+          const compiledExists = await exists(compiledPath);
+          
+          if (compiledExists) {
+            try {
+              const compiledContent = await readTextFile(compiledPath);
+              const compiled = JSON.parse(compiledContent);
+              routine.compiledVersion = compiled.formatVersion;
+              routine.compiledAt = new Date(compiled.generatedAtUtc);
+              routine.compiledFileName = `${baseName}.fftraj.json`;
+            } catch (e) {
+              console.warn(`Failed to parse compiled artifact for ${baseName}:`, e);
+            }
+          }
+          
           loadedRoutines.push(routine);
         }
       }
@@ -541,9 +559,15 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (state.isProjectLoaded && state.projectPath) {
       try {
         const filePath = `${state.projectPath}/src/main/deploy/FeatherFlow/${routine.name}.ff`;
+        const compiledPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${routine.name}.fftraj.json`;
         const fileExists = await exists(filePath);
         if (fileExists) {
           await remove(filePath);
+        }
+
+        const compiledExists = await exists(compiledPath);
+        if (compiledExists) {
+          await remove(compiledPath);
         }
       } catch (error) {
         console.error('Failed to delete routine file:', error);
@@ -582,6 +606,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       try {
         const oldPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${oldName}.ff`;
         const newPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${newName}.ff`;
+        const oldCompiledPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${oldName}.fftraj.json`;
+        const newCompiledPath = `${state.projectPath}/src/main/deploy/FeatherFlow/${newName}.fftraj.json`;
         
         const oldFileExists = await exists(oldPath);
         if (oldFileExists) {
@@ -594,6 +620,28 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           await writeTextFile(newPath, JSON.stringify(routineData, null, 2));
           await remove(oldPath);
         }
+
+        const oldCompiledExists = await exists(oldCompiledPath);
+        if (oldCompiledExists) {
+          const compiledContent = await readTextFile(oldCompiledPath);
+          const compiledData = JSON.parse(compiledContent);
+          compiledData.sourceRoutineName = newName;
+          compiledData.generatedAtUtc = new Date().toISOString();
+
+          await writeTextFile(newCompiledPath, JSON.stringify(compiledData, null, 2));
+          await remove(oldCompiledPath);
+        }
+
+        set(state => ({
+          routines: state.routines.map(r =>
+            r.id === routineId
+              ? {
+                  ...r,
+                  compiledFileName: `${newName}.fftraj.json`,
+                }
+              : r
+          )
+        }));
       } catch (error) {
         console.error('Failed to rename routine file:', error);
         throw error;
@@ -720,19 +768,43 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         await mkdir(routinesPath, { recursive: true });
       }
 
-      // Write routine to file
+      // Write source .ff file
       await writeTextFile(filePath, JSON.stringify(routine, null, 2));
-      
-      console.log(`Saved routine: ${routine.name}`);
-      
-      // Mark as not dirty
+      console.log(`Saved routine source: ${routine.name}.ff`);
+
+      // Compile using the routine being saved, not whatever is currently loaded in Studio.
+      const compiled = await invoke<CompiledTrajectoryFile>(
+        'compile_routine_runtime',
+        {
+          anchors: routine.anchorPoints,
+          controlPoints: routine.controlPoints,
+          routineId: routine.id,
+          routineName: routine.name,
+          generatorVersion: '1.0.0', // TODO: Use actual app version
+        }
+      );
+
+      // Write compiled artifact
+      const compiledPath = `${routinesPath}/${routine.name}.fftraj.json`;
+      await writeTextFile(compiledPath, JSON.stringify(compiled, null, 2));
+      console.log(`Saved compiled trajectory: ${routine.name}.fftraj.json`);
+
+      // Update routine metadata with compilation info
       set(state => ({
         routines: state.routines.map(r =>
-          r.id === routine.id ? { ...r } : r
+          r.id === routine.id
+            ? {
+                ...r,
+                compiledVersion: compiled.formatVersion,
+                compiledAt: new Date(compiled.generatedAtUtc),
+                compiledFileName: `${routine.name}.fftraj.json`,
+              }
+            : r
         )
       }));
     } catch (error) {
       console.error('Failed to save routine to file:', error);
+      throw error; // Surface compile errors to user
     }
   },
 

@@ -7,3 +7,13 @@ export type { SnapPoint, SnapPointColor } from './SnapPoint';
 export type { ProjectConfig } from './ProjectConfig';
 export type { DeployCommandDefinition, DeployCommandParameter } from './DeployCommand';
 export { defaultProjectConfig } from './ProjectConfig';
+export type {
+  CompiledTrajectoryFile,
+  CompiledTrajectoryVariant,
+  CompiledVariants,
+  CompiledSegment,
+  CompiledPathPoint,
+  CompiledEvent,
+  VariantMetadata,
+  CoordinateFrameMetadata,
+} from './CompiledTrajectory';

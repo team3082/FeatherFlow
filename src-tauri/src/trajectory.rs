@@ -4,10 +4,13 @@ use crate::controls::{
     collect_split_values,
     parse_actions,
     parse_motion_limits,
+    rotate_heading_at_t,
     resolve_motion_limit_at_t,
     stop_duration_at_t,
 };
 use crate::types::{AnchorPoint, ControlPoint, PathPoint, TrajectoryResult, Vector2};
+
+const FIELD_HEIGHT_INCHES: f64 = 317.69;
 
 /// Computes a full time-parameterized trajectory from anchors and optional control points.
 ///
@@ -27,6 +30,14 @@ use crate::types::{AnchorPoint, ControlPoint, PathPoint, TrajectoryResult, Vecto
 pub(crate) fn compute_travel_time(
     anchors: Vec<AnchorPoint>,
     control_points: Option<Vec<ControlPoint>>,
+) -> TrajectoryResult {
+    compute_travel_time_with_orientation(anchors, control_points, false)
+}
+
+fn compute_travel_time_with_orientation(
+    anchors: Vec<AnchorPoint>,
+    control_points: Option<Vec<ControlPoint>>,
+    flipped: bool,
 ) -> TrajectoryResult {
     if anchors.len() < 2 {
         return TrajectoryResult {
@@ -48,7 +59,7 @@ pub(crate) fn compute_travel_time(
     let motion_limits = parse_motion_limits(&control_points, anchors.len().saturating_sub(1));
     let split_values = collect_split_values(&actions);
     let segments = split_path(&path_points, &sample_ts, &split_values);
-    let rotate_by_dist = build_rotate_keyframes_by_distance(&path_points, &sample_ts, &actions, false);
+    let rotate_by_dist = build_rotate_keyframes_by_distance(&path_points, &sample_ts, &actions, flipped);
 
     let mut all_points: Vec<PathPoint> = Vec::new();
     let mut cumulative_time = 0.0;
@@ -94,11 +105,24 @@ pub(crate) fn compute_travel_time(
             let stop_duration = stop_duration_at_t(&actions, split_t);
             if stop_duration > crate::EPSILON {
                 if let Some(last_point) = all_points.last().cloned() {
+                    let last_heading = last_point.heading;
                     let mut hold = last_point;
+                    if let Some(stop_heading) = rotate_heading_at_t(&actions, split_t) {
+                        let mut delta = stop_heading - last_heading;
+                        while delta > std::f64::consts::PI {
+                            delta -= 2.0 * std::f64::consts::PI;
+                        }
+                        while delta < -std::f64::consts::PI {
+                            delta += 2.0 * std::f64::consts::PI;
+                        }
+                        hold.heading = last_heading + delta;
+                        hold.rotational_velocity = delta / stop_duration;
+                    } else {
+                        hold.rotational_velocity = 0.0;
+                    }
                     hold.time += stop_duration;
                     hold.velocity = Vector2 { x: 0.0, y: 0.0 };
                     hold.acceleration = 0.0;
-                    hold.rotational_velocity = 0.0;
                     all_points.push(hold);
                     cumulative_time += stop_duration;
                 }
@@ -636,6 +660,339 @@ fn annotate_discrete_curvature(path: &mut [PathPoint]) {
             point.curvature = point.curvature.signum() * estimated[i];
             if point.curvature == 0.0 {
                 point.curvature = estimated[i];
+            }
+        }
+    }
+}
+
+/// Compiles a full trajectory runtime artifact for WPILib integration.
+///
+/// This creates a versioned JSON-serializable artifact containing both normal and flipped
+/// trajectory variants with pre-computed path points, events, and metadata.
+///
+/// #### Arguments
+/// * `anchors` - Path anchor points
+/// * `control_points` - Optional control points with actions
+/// * `routine_id` - Unique identifier for the routine
+/// * `routine_name` - Human-readable routine name
+/// * `generator_version` - FeatherFlow version string
+///
+/// #### Returns
+/// A `CompiledTrajectoryFile` ready for serialization to JSON.
+pub(crate) fn compile_routine_runtime(
+    anchors: Vec<AnchorPoint>,
+    control_points: Option<Vec<ControlPoint>>,
+    routine_id: String,
+    routine_name: String,
+    generator_version: String,
+) -> crate::types::CompiledTrajectoryFile {
+    let normal_result = compute_travel_time(anchors.clone(), control_points.clone());
+    let normal_variant = build_compiled_variant(
+        &anchors,
+        &normal_result,
+        control_points.as_ref(),
+        false,
+    );
+
+    let flipped_anchors = mirror_anchors_across_field_midline(&anchors);
+    let flipped_result = compute_travel_time_with_orientation(flipped_anchors.clone(), control_points.clone(), true);
+    let flipped_variant = build_compiled_variant(
+        &flipped_anchors,
+        &flipped_result,
+        control_points.as_ref(),
+        true,
+    );
+
+    crate::types::CompiledTrajectoryFile {
+        format_version: 1,
+        source_routine_id: routine_id,
+        source_routine_name: routine_name,
+        generated_at_utc: chrono::Utc::now().to_rfc3339(),
+        generator_version,
+        coordinate_frame: crate::types::CoordinateFrameMetadata {
+            units: "meters".to_string(),
+            origin: "bottomLeft".to_string(),
+            heading_convention: "degrees_input_radians_output".to_string(),
+        },
+        variants: crate::types::CompiledVariants {
+            normal: normal_variant,
+            flipped: flipped_variant,
+        },
+    }
+}
+
+fn mirror_anchors_across_field_midline(anchors: &[AnchorPoint]) -> Vec<AnchorPoint> {
+    anchors
+        .iter()
+        .cloned()
+        .map(|mut anchor| {
+            anchor.position.y = FIELD_HEIGHT_INCHES - anchor.position.y;
+            anchor.handle_in_offset.y = -anchor.handle_in_offset.y;
+            anchor.handle_out_offset.y = -anchor.handle_out_offset.y;
+            anchor
+        })
+        .collect()
+}
+
+/// Builds a compiled variant with segments and events from trajectory result.
+fn build_compiled_variant(
+    anchors: &[AnchorPoint],
+    traj_result: &TrajectoryResult,
+    control_points: Option<&Vec<ControlPoint>>,
+    _flipped: bool,
+) -> crate::types::CompiledTrajectoryVariant {
+    let control_points = control_points
+        .map(|cp| cp.clone())
+        .unwrap_or_default();
+    let actions = parse_actions(control_points.clone(), anchors.len().saturating_sub(1));
+    let split_values = collect_split_values(&actions);
+
+    let total_distance = traj_result
+        .path_points
+        .last()
+        .map(|p| p.s)
+        .unwrap_or(0.0);
+
+    // Rebuild geometric t->distance mapping so split boundaries and event times
+    // align with the same normalized parameter space used during profiling.
+    let (geometry_path, geometry_ts) = generate_path_points(anchors);
+
+    // Build compiled events from actions
+    let events = build_compiled_events(&actions, &traj_result.path_points, &geometry_path, &geometry_ts);
+
+    // Group path points into segments by split boundaries
+    let segments = build_compiled_segments(&traj_result.path_points, &split_values, &geometry_path, &geometry_ts);
+
+    crate::types::CompiledTrajectoryVariant {
+        total_time: traj_result.total_time,
+        total_distance,
+        segments,
+        events,
+        metadata: crate::types::VariantMetadata {
+            sample_count: traj_result.path_points.len(),
+            split_ts: split_values,
+        },
+    }
+}
+
+/// Builds compiled events from action descriptors and path points.
+fn build_compiled_events(
+    actions: &[crate::controls::ActionDescriptor],
+    path_points: &[PathPoint],
+    geometry_path: &[PathPoint],
+    geometry_ts: &[f64],
+) -> Vec<crate::types::CompiledEvent> {
+    actions
+        .iter()
+        .map(|action| {
+            let target_s = interpolate_distance_at_t(geometry_path, geometry_ts, action.t);
+            let time = interpolate_time_at_s(path_points, target_s);
+            let (event_type, payload) = match &action.kind {
+                crate::controls::ActionKind::Stop { duration } => (
+                    "stop".to_string(),
+                    serde_json::json!({ "duration": duration }),
+                ),
+                crate::controls::ActionKind::Command { stopping } => (
+                    "command".to_string(),
+                    serde_json::json!({ "stopping": stopping }),
+                ),
+                crate::controls::ActionKind::Rotate { heading } => (
+                    "rotate".to_string(),
+                    serde_json::json!({ "heading": heading }),
+                ),
+            };
+            crate::types::CompiledEvent {
+                event_type,
+                t: action.t,
+                time,
+                payload,
+            }
+        })
+        .collect()
+}
+
+/// Builds segments from path points and split t values.
+fn build_compiled_segments(
+    path_points: &[PathPoint],
+    split_ts: &[f64],
+    geometry_path: &[PathPoint],
+    geometry_ts: &[f64],
+) -> Vec<crate::types::CompiledSegment> {
+    if path_points.len() < 2 {
+        return vec![];
+    }
+
+    // Find path point indices corresponding to split t values
+    let mut segment_boundaries = vec![0];
+
+    for &split_t in split_ts {
+        let target_s = interpolate_distance_at_t(geometry_path, geometry_ts, split_t);
+        if let Some(idx) = find_point_index_at_s(path_points, target_s) {
+            if *segment_boundaries.last().unwrap() < idx {
+                segment_boundaries.push(idx);
+            }
+        }
+    }
+
+    // Always include the last point
+    if *segment_boundaries.last().unwrap() < path_points.len() - 1 {
+        segment_boundaries.push(path_points.len() - 1);
+    }
+
+    let mut segments = vec![];
+
+    for (seg_idx, window) in segment_boundaries.windows(2).enumerate() {
+        let start_idx = window[0];
+        let end_idx = window[1];
+
+        if start_idx >= end_idx {
+            continue;
+        }
+
+        let segment_points: Vec<PathPoint> = path_points[start_idx..=end_idx]
+            .iter()
+            .cloned()
+            .map(|mut point| {
+                point.heading = normalize_heading_0_2pi(point.heading);
+                point
+            })
+            .collect();
+
+        if segment_points.len() < 2 {
+            continue;
+        }
+
+        let segment_start_time = segment_points.first().map(|p| p.time).unwrap_or(0.0);
+        let segment_end_time = segment_points.last().map(|p| p.time).unwrap_or(segment_start_time);
+
+        // Compute normalized t values
+        let total_distance = path_points.last().map(|p| p.s).unwrap_or(1.0).max(1.0);
+        let start_t = segment_points.first().map(|p| p.s / total_distance).unwrap_or(0.0);
+        let end_t = segment_points.last().map(|p| p.s / total_distance).unwrap_or(0.0);
+
+        let segment_points: Vec<PathPoint> = segment_points
+            .into_iter()
+            .map(|mut point| {
+                point.time -= segment_start_time;
+                point
+            })
+            .collect();
+
+        segments.push(crate::types::CompiledSegment {
+            segment_index: seg_idx as i32,
+            start_t,
+            end_t,
+            start_time: segment_start_time,
+            end_time: segment_end_time,
+            path_points: segment_points,
+        });
+    }
+
+    segments
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mirrors_anchors_across_field_midline() {
+        let anchors = vec![AnchorPoint {
+            position: Vector2 { x: 12.0, y: 50.0 },
+            handle_in_offset: Vector2 { x: 3.0, y: -4.0 },
+            handle_out_offset: Vector2 { x: -2.0, y: 8.0 },
+            is_curved: true,
+            handles_aligned: false,
+            name: "A".to_string(),
+        }];
+
+        let mirrored = mirror_anchors_across_field_midline(&anchors);
+
+        assert_eq!(mirrored.len(), 1);
+        assert!((mirrored[0].position.x - 12.0).abs() < crate::EPSILON);
+        assert!((mirrored[0].position.y - (FIELD_HEIGHT_INCHES - 50.0)).abs() < crate::EPSILON);
+        assert!((mirrored[0].handle_in_offset.y - 4.0).abs() < crate::EPSILON);
+        assert!((mirrored[0].handle_out_offset.y + 8.0).abs() < crate::EPSILON);
+    }
+}
+
+fn normalize_heading_0_2pi(heading: f64) -> f64 {
+    let two_pi = 2.0 * std::f64::consts::PI;
+    heading.rem_euclid(two_pi)
+}
+
+/// Finds the index of a path point closest to a given normalized t value.
+fn find_point_index_at_s(path_points: &[PathPoint], target_s: f64) -> Option<usize> {
+    if path_points.is_empty() {
+        return None;
+    }
+
+    path_points
+        .iter()
+        .position(|p| p.s >= target_s)
+}
+
+/// Interpolates time at a distance value using linear interpolation.
+fn interpolate_time_at_s(path_points: &[PathPoint], target_s: f64) -> f64 {
+    if path_points.is_empty() {
+        return 0.0;
+    }
+
+    let target_s = target_s.max(0.0);
+
+    // Binary search for the segment containing target_s
+    match path_points.binary_search_by(|p| p.s.partial_cmp(&target_s).unwrap()) {
+        Ok(idx) => path_points[idx].time,
+        Err(idx) => {
+            if idx == 0 {
+                path_points[0].time
+            } else if idx >= path_points.len() {
+                path_points[path_points.len() - 1].time
+            } else {
+                let p1 = &path_points[idx - 1];
+                let p2 = &path_points[idx];
+                let frac = if (p2.s - p1.s).abs() > crate::EPSILON {
+                    (target_s - p1.s) / (p2.s - p1.s)
+                } else {
+                    0.5
+                };
+                p1.time + frac * (p2.time - p1.time)
+            }
+        }
+    }
+}
+
+/// Interpolates cumulative distance at a normalized path parameter t from geometric samples.
+fn interpolate_distance_at_t(path: &[PathPoint], sample_ts: &[f64], t: f64) -> f64 {
+    if path.is_empty() || sample_ts.is_empty() {
+        return 0.0;
+    }
+
+    let t = t.clamp(0.0, 1.0);
+    if t <= sample_ts[0] {
+        return path[0].s;
+    }
+
+    let last_idx = sample_ts.len() - 1;
+    if t >= sample_ts[last_idx] {
+        return path[last_idx].s;
+    }
+
+    match sample_ts.binary_search_by(|probe| probe.partial_cmp(&t).unwrap_or(std::cmp::Ordering::Equal)) {
+        Ok(idx) => path[idx].s,
+        Err(idx) => {
+            let lo = idx.saturating_sub(1);
+            let hi = idx.min(last_idx);
+            let t0 = sample_ts[lo];
+            let t1 = sample_ts[hi];
+            let s0 = path[lo].s;
+            let s1 = path[hi].s;
+            let span = (t1 - t0).abs();
+            if span <= crate::EPSILON {
+                s0
+            } else {
+                let alpha = ((t - t0) / (t1 - t0)).clamp(0.0, 1.0);
+                s0 + alpha * (s1 - s0)
             }
         }
     }
