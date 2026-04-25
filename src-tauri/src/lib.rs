@@ -1,9 +1,3 @@
-const MAX_TRANSLATIONAL_VELOCITY: f64 = 170.0;
-const MAX_ROTATIONAL_VELOCITY: f64 = 5.0;
-const MAX_WHEEL_SPEED: f64 = 170.0;
-const MAX_ACCELERATION: f64 = 170.0;
-const MAX_LATERAL_ACCELERATION: f64 = 170.0;
-const SWERVE_RADIUS: f64 = 14.0;
 const OVERSAMPLING_FACTOR: usize = 100;
 const SAMPLING_DISTANCE: f64 = 1.0;
 const EPSILON: f64 = 1e-9;
@@ -13,20 +7,26 @@ mod controls;
 mod types;
 mod trajectory;
 
-use types::{AnchorPoint, ControlPoint, TrajectoryResult, CompiledTrajectoryFile};
+use types::{AnchorPoint, CompiledTrajectoryFile, ControlPoint, MotionSettings, TrajectoryResult};
 
 #[tauri::command]
 fn compute_travel_time(
     anchors: Vec<AnchorPoint>,
     control_points: Option<Vec<ControlPoint>>,
+    motion_settings: Option<MotionSettings>,
 ) -> TrajectoryResult {
-    trajectory::compute_travel_time(anchors, control_points)
+    trajectory::compute_travel_time(
+        anchors,
+        control_points,
+        motion_settings.unwrap_or_default().sanitized(),
+    )
 }
 
 #[tauri::command]
 fn compile_routine_runtime(
     anchors: Vec<AnchorPoint>,
     control_points: Option<Vec<ControlPoint>>,
+    motion_settings: Option<MotionSettings>,
     routine_id: String,
     routine_name: String,
     generator_version: String,
@@ -34,6 +34,7 @@ fn compile_routine_runtime(
     trajectory::compile_routine_runtime(
         anchors,
         control_points,
+        motion_settings.unwrap_or_default().sanitized(),
         routine_id,
         routine_name,
         generator_version,

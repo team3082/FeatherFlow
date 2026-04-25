@@ -1,5 +1,13 @@
 import { create } from 'zustand';
-import { AutoRoutine, SnapPoint, ProjectConfig, DeployCommandDefinition, CompiledTrajectoryFile } from '@/types';
+import {
+  AutoRoutine,
+  SnapPoint,
+  ProjectConfig,
+  DeployCommandDefinition,
+  CompiledTrajectoryFile,
+  MotionSettings,
+  defaultMotionSettings,
+} from '@/types';
 import { useStudioStore } from './StudioStore';
 import { 
   writeTextFile, 
@@ -11,6 +19,19 @@ import {
 } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+
+const clampMotionSettings = (settings: MotionSettings): MotionSettings => {
+  const minPositive = 0.001;
+
+  return {
+    maxTranslationalVelocity: Math.max(minPositive, settings.maxTranslationalVelocity),
+    maxRotationalVelocity: Math.max(minPositive, settings.maxRotationalVelocity),
+    maxWheelSpeed: Math.max(minPositive, settings.maxWheelSpeed),
+    maxAcceleration: Math.max(minPositive, settings.maxAcceleration),
+    maxLateralAcceleration: Math.max(minPositive, settings.maxLateralAcceleration),
+    swerveRadius: Math.max(minPositive, settings.swerveRadius),
+  };
+};
 
 export interface ProjectState {
   projectPath: string | null;
@@ -24,6 +45,7 @@ export interface ProjectState {
   snapPoints: SnapPoint[];
   snapEnabled: boolean;
   snapRadius: number;
+  motionSettings: MotionSettings;
 
   // Snap Point Management
   loadConfig: () => Promise<void>;
@@ -34,6 +56,7 @@ export interface ProjectState {
   deleteSnapPoint: (id: string) => Promise<void>;
   toggleSnapEnabled: () => Promise<void>;
   setSnapRadius: (radius: number) => Promise<void>;
+  setMotionSettings: (updates: Partial<MotionSettings>) => Promise<void>;
   getSnapPoint: (id: string) => SnapPoint | undefined;
   syncAnchorsToSnapPoint: (snapPointId: string) => Promise<void>;
 
@@ -78,6 +101,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   snapPoints: [],
   snapEnabled: true,
   snapRadius: 6,
+  motionSettings: defaultMotionSettings,
 
   loadDeployCommands: async () => {
     const state = get();
@@ -172,19 +196,30 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (configExists) {
         const content = await readTextFile(configPath);
         const config: ProjectConfig = JSON.parse(content);
+        const mergedMotionSettings = clampMotionSettings({
+          ...defaultMotionSettings,
+          ...(config.motionSettings || {}),
+        });
         
         set({
           snapPoints: config.snapPoints || [],
           snapEnabled: config.snapSettings?.enabled ?? true,
-          snapRadius: config.snapSettings?.radius ?? 6
+          snapRadius: config.snapSettings?.radius ?? 6,
+          motionSettings: mergedMotionSettings,
         });
+
+        const studioStore = useStudioStore.getState();
+        studioStore.setMotionSettings(mergedMotionSettings);
       } else {
         // Create default config
         set({
           snapPoints: [],
           snapEnabled: true,
-          snapRadius: 6
+          snapRadius: 6,
+          motionSettings: defaultMotionSettings,
         });
+        const studioStore = useStudioStore.getState();
+        studioStore.setMotionSettings(defaultMotionSettings);
         await get().saveConfig();
       }
     } catch (error) {
@@ -192,8 +227,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       set({
         snapPoints: [],
         snapEnabled: true,
-        snapRadius: 6
+        snapRadius: 6,
+        motionSettings: defaultMotionSettings,
       });
+
+      const studioStore = useStudioStore.getState();
+      studioStore.setMotionSettings(defaultMotionSettings);
     }
   },
 
@@ -216,7 +255,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         snapSettings: {
           enabled: state.snapEnabled,
           radius: state.snapRadius
-        }
+        },
+        motionSettings: clampMotionSettings(state.motionSettings),
       };
 
       await writeTextFile(configPath, JSON.stringify(config, null, 2));
@@ -306,6 +346,21 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   setSnapRadius: async (radius: number) => {
     set({ snapRadius: Math.max(1, Math.min(20, radius)) });
+    await get().saveConfig();
+  },
+
+  setMotionSettings: async (updates: Partial<MotionSettings>) => {
+    const nextSettings = clampMotionSettings({
+      ...get().motionSettings,
+      ...updates,
+    });
+
+    set({ motionSettings: nextSettings });
+
+    const studioStore = useStudioStore.getState();
+    studioStore.setMotionSettings(nextSettings);
+    studioStore.invokeTrajectoryComputation();
+
     await get().saveConfig();
   },
 
@@ -436,7 +491,20 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   unloadProject: () => {
-    set({ projectPath: null, isProjectLoaded: false, routines: [], deployCommands: [], currentRoutineId: null });
+    set({
+      projectPath: null,
+      isProjectLoaded: false,
+      routines: [],
+      deployCommands: [],
+      currentRoutineId: null,
+      snapPoints: [],
+      snapEnabled: true,
+      snapRadius: 6,
+      motionSettings: defaultMotionSettings,
+    });
+
+    const studioStore = useStudioStore.getState();
+    studioStore.setMotionSettings(defaultMotionSettings);
   },
 
   getCurrentRoutineName: () => {
@@ -711,6 +779,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const studioStore = useStudioStore.getState();
     studioStore.setAnchorPoints(routine.anchorPoints);
     studioStore.setControlPoints(routine.controlPoints);
+    studioStore.setMotionSettings(get().motionSettings);
     studioStore.setSelectedPoint(null);
     
     // Set this as the current routine
@@ -778,6 +847,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         {
           anchors: routine.anchorPoints,
           controlPoints: routine.controlPoints,
+          motionSettings: clampMotionSettings(state.motionSettings),
           routineId: routine.id,
           routineName: routine.name,
           generatorVersion: '1.0.0', // TODO: Use actual app version

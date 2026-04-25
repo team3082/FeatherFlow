@@ -8,7 +8,7 @@ use crate::controls::{
     resolve_motion_limit_at_t,
     stop_duration_at_t,
 };
-use crate::types::{AnchorPoint, ControlPoint, PathPoint, TrajectoryResult, Vector2};
+use crate::types::{AnchorPoint, ControlPoint, MotionSettings, PathPoint, TrajectoryResult, Vector2};
 
 const FIELD_HEIGHT_INCHES: f64 = 317.69;
 
@@ -30,13 +30,15 @@ const FIELD_HEIGHT_INCHES: f64 = 317.69;
 pub(crate) fn compute_travel_time(
     anchors: Vec<AnchorPoint>,
     control_points: Option<Vec<ControlPoint>>,
+    motion_settings: MotionSettings,
 ) -> TrajectoryResult {
-    compute_travel_time_with_orientation(anchors, control_points, false)
+    compute_travel_time_with_orientation(anchors, control_points, motion_settings, false)
 }
 
 fn compute_travel_time_with_orientation(
     anchors: Vec<AnchorPoint>,
     control_points: Option<Vec<ControlPoint>>,
+    motion_settings: MotionSettings,
     flipped: bool,
 ) -> TrajectoryResult {
     if anchors.len() < 2 {
@@ -76,6 +78,7 @@ fn compute_travel_time_with_orientation(
             segment_ts,
             &target_headings,
             &motion_limits,
+            &motion_settings,
         );
         if profiled_segment.is_empty() {
             continue;
@@ -357,6 +360,7 @@ fn profile_segment(
     segment_ts: &[f64],
     target_headings: &[f64],
     motion_limits: &[crate::controls::MotionLimitFrame],
+    motion_settings: &MotionSettings,
 ) -> Vec<PathPoint> {
     if segment.len() < 2 {
         return Vec::new();
@@ -386,8 +390,8 @@ fn profile_segment(
     }
     let total_distance = distances[n - 1];
 
-    let mut point_max_velocities = vec![crate::MAX_TRANSLATIONAL_VELOCITY; n];
-    let mut point_max_accelerations = vec![crate::MAX_ACCELERATION; n];
+    let mut point_max_velocities = vec![motion_settings.max_translational_velocity; n];
+    let mut point_max_accelerations = vec![motion_settings.max_acceleration; n];
     for i in 0..n {
         let rel = if total_distance > crate::EPSILON { distances[i] / total_distance } else { 0.0 };
         let t = segment_ts
@@ -395,7 +399,7 @@ fn profile_segment(
             .copied()
             .unwrap_or(rel)
             .clamp(0.0, 1.0);
-        let (v_max, a_max) = resolve_motion_limit_at_t(motion_limits, t.clamp(0.0, 1.0));
+        let (v_max, a_max) = resolve_motion_limit_at_t(motion_limits, t.clamp(0.0, 1.0), motion_settings);
         point_max_velocities[i] = v_max;
         point_max_accelerations[i] = a_max;
     }
@@ -430,12 +434,12 @@ fn profile_segment(
             continue;
         }
 
-        let rot_density = (dtheta[i].abs() / ds) * crate::SWERVE_RADIUS;
-        let v_wheel = crate::MAX_WHEEL_SPEED / (1.0 + rot_density);
+        let rot_density = (dtheta[i].abs() / ds) * motion_settings.swerve_radius;
+        let v_wheel = motion_settings.max_wheel_speed / (1.0 + rot_density);
         velocities[i] = velocities[i].min(v_wheel);
 
         if dtheta[i].abs() > crate::EPSILON {
-            let v_rot = crate::MAX_ROTATIONAL_VELOCITY * ds / dtheta[i].abs();
+            let v_rot = motion_settings.max_rotational_velocity * ds / dtheta[i].abs();
             velocities[i] = velocities[i].min(v_rot);
         }
     }
@@ -443,7 +447,9 @@ fn profile_segment(
     for i in 0..n {
         let k = points[i].curvature;
         if k.abs() > crate::EPSILON {
-            let a_lat_cap = crate::MAX_LATERAL_ACCELERATION.min(point_max_accelerations[i]);
+            let a_lat_cap = motion_settings
+                .max_lateral_acceleration
+                .min(point_max_accelerations[i]);
             let v_lat = (a_lat_cap / k.abs()).sqrt();
             velocities[i] = velocities[i].min(v_lat);
         }
@@ -682,11 +688,12 @@ fn annotate_discrete_curvature(path: &mut [PathPoint]) {
 pub(crate) fn compile_routine_runtime(
     anchors: Vec<AnchorPoint>,
     control_points: Option<Vec<ControlPoint>>,
+    motion_settings: MotionSettings,
     routine_id: String,
     routine_name: String,
     generator_version: String,
 ) -> crate::types::CompiledTrajectoryFile {
-    let normal_result = compute_travel_time(anchors.clone(), control_points.clone());
+    let normal_result = compute_travel_time(anchors.clone(), control_points.clone(), motion_settings);
     let normal_variant = build_compiled_variant(
         &anchors,
         &normal_result,
@@ -695,7 +702,12 @@ pub(crate) fn compile_routine_runtime(
     );
 
     let flipped_anchors = mirror_anchors_across_field_midline(&anchors);
-    let flipped_result = compute_travel_time_with_orientation(flipped_anchors.clone(), control_points.clone(), true);
+    let flipped_result = compute_travel_time_with_orientation(
+        flipped_anchors.clone(),
+        control_points.clone(),
+        motion_settings,
+        true,
+    );
     let flipped_variant = build_compiled_variant(
         &flipped_anchors,
         &flipped_result,

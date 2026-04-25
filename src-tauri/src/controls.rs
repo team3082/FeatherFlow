@@ -108,9 +108,13 @@ pub(crate) fn parse_motion_limits(control_points: &[ControlPoint], curve_count: 
     deduped
 }
 
-pub(crate) fn resolve_motion_limit_at_t(frames: &[MotionLimitFrame], t: f64) -> (f64, f64) {
-    let mut max_velocity = crate::MAX_TRANSLATIONAL_VELOCITY;
-    let mut max_acceleration = crate::MAX_ACCELERATION;
+pub(crate) fn resolve_motion_limit_at_t(
+    frames: &[MotionLimitFrame],
+    t: f64,
+    motion_settings: &crate::types::MotionSettings,
+) -> (f64, f64) {
+    let mut max_velocity = motion_settings.max_translational_velocity;
+    let mut max_acceleration = motion_settings.max_acceleration;
 
     for frame in frames {
         if frame.t <= t + crate::EPSILON {

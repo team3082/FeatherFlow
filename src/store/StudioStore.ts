@@ -4,6 +4,7 @@ import { BezierCurve } from '@/types/BezierCurve';
 import { Vector2 } from '@/types/Vector2';
 import { ControlPoint, ControlPointAttribute } from '@/types/ControlPoint';
 import { TrajectoryResult } from '@/types/PathPoint';
+import { MotionSettings, defaultMotionSettings } from '@/types';
 import { invoke } from '@tauri-apps/api/core';
 
 type ActiveToolType = 'anchorTool' | 'controlTool';
@@ -56,6 +57,7 @@ export interface StudioState {
   trajectoryPlaybackTime: number;
   isTrajectoryScrubbing: boolean;
   showingVelocity: boolean;
+  motionSettings: MotionSettings;
   historyPast: StudioSnapshot[];
   historyFuture: StudioSnapshot[];
 
@@ -100,6 +102,7 @@ export interface StudioState {
   setTrajectoryPlaybackTime: (time: number) => void;
   setIsTrajectoryScrubbing: (scrubbing: boolean) => void;
   setShowingVelocity: (showing: boolean) => void;
+  setMotionSettings: (settings: MotionSettings) => void;
   captureHistorySnapshot: () => void;
   undo: () => void;
   redo: () => void;
@@ -143,11 +146,16 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   trajectoryPlaybackTime: 0,
   isTrajectoryScrubbing: false,
   showingVelocity: false,
+  motionSettings: defaultMotionSettings,
   historyPast: [],
   historyFuture: [],
 
   setShowingVelocity(showing: boolean) {
     set({ showingVelocity: showing });
+  },
+
+  setMotionSettings(settings: MotionSettings) {
+    set({ motionSettings: settings });
   },
 
   captureHistorySnapshot() {
@@ -522,7 +530,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const state = get();
     invoke<TrajectoryResult>("compute_travel_time", {
       anchors: state.anchorPoints,
-      controlPoints: state.controlPoints
+      controlPoints: state.controlPoints,
+      motionSettings: state.motionSettings,
     })
       .then(result => {
         set({ trajectory: result });

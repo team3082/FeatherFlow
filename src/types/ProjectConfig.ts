@@ -1,5 +1,37 @@
 import { SnapPoint } from "./SnapPoint";
 
+export interface MotionSettings {
+  /**
+   * Maximum translational speed (units/sec)
+   */
+  maxTranslationalVelocity: number;
+
+  /**
+   * Maximum rotational speed (rad/sec)
+   */
+  maxRotationalVelocity: number;
+
+  /**
+   * Maximum wheel speed (units/sec)
+   */
+  maxWheelSpeed: number;
+
+  /**
+   * Maximum linear acceleration (units/sec^2)
+   */
+  maxAcceleration: number;
+
+  /**
+   * Maximum lateral acceleration (units/sec^2)
+   */
+  maxLateralAcceleration: number;
+
+  /**
+   * Distance from robot center to wheel (units)
+   */
+  swerveRadius: number;
+}
+
 /**
  * Global project configuration file structure
  * Stored at: {projectPath}/src/main/deploy/FeatherFlow/config.json
@@ -24,6 +56,11 @@ export interface ProjectConfig {
      */
     radius: number;
   };
+
+  /**
+   * Global motion limits used by trajectory preview and compile.
+   */
+  motionSettings?: MotionSettings;
 }
 
 /**
@@ -34,5 +71,22 @@ export const defaultProjectConfig: ProjectConfig = {
   snapSettings: {
     enabled: true,
     radius: 6
+  },
+  motionSettings: {
+    maxTranslationalVelocity: 170,
+    maxRotationalVelocity: 5,
+    maxWheelSpeed: 170,
+    maxAcceleration: 170,
+    maxLateralAcceleration: 170,
+    swerveRadius: 14
   }
+};
+
+export const defaultMotionSettings: MotionSettings = {
+  maxTranslationalVelocity: 170,
+  maxRotationalVelocity: 5,
+  maxWheelSpeed: 170,
+  maxAcceleration: 170,
+  maxLateralAcceleration: 170,
+  swerveRadius: 14,
 };

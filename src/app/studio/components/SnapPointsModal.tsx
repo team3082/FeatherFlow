@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from 'react';
+import React from 'react';
 import { X, Plus, Trash2, Lock, Unlock } from 'lucide-react';
 import { useProjectStore } from '@/store/ProjectStore';
-import { SnapPoint, SnapPointColor } from '@/types';
+import { MotionSettings, SnapPointColor } from '@/types';
 
 interface SnapPointsModalProps {
   isOpen: boolean;
@@ -27,14 +27,14 @@ export const SnapPointsModal: React.FC<SnapPointsModalProps> = ({ isOpen, onClos
     snapPoints,
     snapEnabled,
     snapRadius,
+    motionSettings,
     addSnapPoint,
     updateSnapPoint,
     deleteSnapPoint,
     toggleSnapEnabled,
-    setSnapRadius
+    setSnapRadius,
+    setMotionSettings,
   } = useProjectStore();
-
-  const [localSnapRadius, setLocalSnapRadius] = useState(snapRadius);
 
   if (!isOpen) return null;
 
@@ -87,8 +87,13 @@ export const SnapPointsModal: React.FC<SnapPointsModalProps> = ({ isOpen, onClos
   const handleRadiusChange = async (value: string) => {
     const numValue = parseFloat(value);
     if (isNaN(numValue)) return;
-    setLocalSnapRadius(numValue);
     await setSnapRadius(numValue);
+  };
+
+  const handleMotionSettingChange = async (key: keyof MotionSettings, value: string) => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return;
+    await setMotionSettings({ [key]: numValue });
   };
 
   return (
@@ -107,6 +112,114 @@ export const SnapPointsModal: React.FC<SnapPointsModalProps> = ({ isOpen, onClos
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
+          {/* Global Settings */}
+          <div className="mb-6 p-4 rounded-xl border border-gray-700/50 bg-gray-800/20">
+            <h4 className="text-sm font-semibold text-gray-200 mb-3">Global Motion + Snap Settings</h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Snap Enabled</label>
+                <button
+                  onClick={toggleSnapEnabled}
+                  className={`w-full px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    snapEnabled
+                      ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 hover:bg-blue-500/30'
+                      : 'bg-gray-700/50 text-gray-300 border border-gray-600 hover:bg-gray-700'
+                  }`}
+                >
+                  {snapEnabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Snap Radius</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  step="0.5"
+                  value={snapRadius}
+                  onChange={(e) => handleRadiusChange(e.target.value)}
+                  className="w-full px-2.5 py-2 bg-gray-700/50 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Max Velocity</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0.001}
+                  value={motionSettings.maxTranslationalVelocity}
+                  onChange={(e) => handleMotionSettingChange('maxTranslationalVelocity', e.target.value)}
+                  className="w-full px-2.5 py-2 bg-gray-700/50 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Max Acceleration</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0.001}
+                  value={motionSettings.maxAcceleration}
+                  onChange={(e) => handleMotionSettingChange('maxAcceleration', e.target.value)}
+                  className="w-full px-2.5 py-2 bg-gray-700/50 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Max Rotational Velocity</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0.001}
+                  value={motionSettings.maxRotationalVelocity}
+                  onChange={(e) => handleMotionSettingChange('maxRotationalVelocity', e.target.value)}
+                  className="w-full px-2.5 py-2 bg-gray-700/50 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Max Wheel Speed</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0.001}
+                  value={motionSettings.maxWheelSpeed}
+                  onChange={(e) => handleMotionSettingChange('maxWheelSpeed', e.target.value)}
+                  className="w-full px-2.5 py-2 bg-gray-700/50 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Max Lateral Accel</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0.001}
+                  value={motionSettings.maxLateralAcceleration}
+                  onChange={(e) => handleMotionSettingChange('maxLateralAcceleration', e.target.value)}
+                  className="w-full px-2.5 py-2 bg-gray-700/50 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Swerve Radius</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0.001}
+                  value={motionSettings.swerveRadius}
+                  onChange={(e) => handleMotionSettingChange('swerveRadius', e.target.value)}
+                  className="w-full px-2.5 py-2 bg-gray-700/50 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Snap Points List */}
           <div>
             <div className="flex items-center justify-between mb-3">

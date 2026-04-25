@@ -79,6 +79,7 @@ export default function RightSidebar() {
 
   const anchorPoints = useStudioStore((state) => state.anchorPoints);
   const controlPoints = useStudioStore((state) => state.controlPoints);
+  const motionSettings = useStudioStore((state) => state.motionSettings);
   const setAnchorPoints = useStudioStore((state) => state.setAnchorPoints);
   const invokeTrajectoryComputation = useStudioStore((state) => state.invokeTrajectoryComputation);
 
@@ -127,6 +128,7 @@ export default function RightSidebar() {
     const result = await invoke('compute_travel_time', {
       anchors,
       controlPoints: controlPoints.length > 0 ? controlPoints : undefined,
+      motionSettings,
     });
     const totalTime = (result as TrajectoryResult).totalTime;
     cache.set(key, totalTime);

@@ -9,6 +9,44 @@ fn default_zero() -> f64 {
     0.0
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct MotionSettings {
+    pub max_translational_velocity: f64,
+    pub max_rotational_velocity: f64,
+    pub max_wheel_speed: f64,
+    pub max_acceleration: f64,
+    pub max_lateral_acceleration: f64,
+    pub swerve_radius: f64,
+}
+
+impl Default for MotionSettings {
+    fn default() -> Self {
+        Self {
+            max_translational_velocity: 170.0,
+            max_rotational_velocity: 5.0,
+            max_wheel_speed: 170.0,
+            max_acceleration: 170.0,
+            max_lateral_acceleration: 170.0,
+            swerve_radius: 14.0,
+        }
+    }
+}
+
+impl MotionSettings {
+    pub fn sanitized(self) -> Self {
+        let min_positive = 0.001;
+        Self {
+            max_translational_velocity: self.max_translational_velocity.max(min_positive),
+            max_rotational_velocity: self.max_rotational_velocity.max(min_positive),
+            max_wheel_speed: self.max_wheel_speed.max(min_positive),
+            max_acceleration: self.max_acceleration.max(min_positive),
+            max_lateral_acceleration: self.max_lateral_acceleration.max(min_positive),
+            swerve_radius: self.swerve_radius.max(min_positive),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Vector2 {
