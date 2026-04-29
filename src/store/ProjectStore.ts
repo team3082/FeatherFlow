@@ -691,13 +691,19 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
         const oldCompiledExists = await exists(oldCompiledPath);
         if (oldCompiledExists) {
-          const compiledContent = await readTextFile(oldCompiledPath);
-          const compiledData = JSON.parse(compiledContent);
-          compiledData.sourceRoutineName = newName;
-          compiledData.generatedAtUtc = new Date().toISOString();
+          // Preserve compiled artifact transformation code but do not execute it.
+          // This prevents writing compiled trajectory files on rename while
+          // keeping the original logic available for future re-enabling.
+          console.log(`Compiled artifact rename is disabled; skipping compiled file move for ${oldName} -> ${newName}`);
+          if (false) {
+            const compiledContent = await readTextFile(oldCompiledPath);
+            const compiledData = JSON.parse(compiledContent);
+            compiledData.sourceRoutineName = newName;
+            compiledData.generatedAtUtc = new Date().toISOString();
 
-          await writeTextFile(newCompiledPath, JSON.stringify(compiledData, null, 2));
-          await remove(oldCompiledPath);
+            await writeTextFile(newCompiledPath, JSON.stringify(compiledData, null, 2));
+            await remove(oldCompiledPath);
+          }
         }
 
         set(state => ({
@@ -841,37 +847,44 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       await writeTextFile(filePath, JSON.stringify(routine, null, 2));
       console.log(`Saved routine source: ${routine.name}.ff`);
 
-      // Compile using the routine being saved, not whatever is currently loaded in Studio.
-      const compiled = await invoke<CompiledTrajectoryFile>(
-        'compile_routine_runtime',
-        {
-          anchors: routine.anchorPoints,
-          controlPoints: routine.controlPoints,
-          motionSettings: clampMotionSettings(state.motionSettings),
-          routineId: routine.id,
-          routineName: routine.name,
-          generatorVersion: '1.0.0', // TODO: Use actual app version
-        }
-      );
+      // Compiled trajectory saving is currently disabled. The original
+      // compilation + save logic is preserved below but wrapped in an
+      // `if (false)` so it will not run. This keeps the code available for
+      // future re-enabling without deleting it.
+      console.log(`Compiled trajectory saving is disabled; skipping compilation for ${routine.name}`);
+      if (false) {
+        // Compile using the routine being saved, not whatever is currently loaded in Studio.
+        const compiled = await invoke<CompiledTrajectoryFile>(
+          'compile_routine_runtime',
+          {
+            anchors: routine.anchorPoints,
+            controlPoints: routine.controlPoints,
+            motionSettings: clampMotionSettings(state.motionSettings),
+            routineId: routine.id,
+            routineName: routine.name,
+            generatorVersion: '1.0.0', // TODO: Use actual app version
+          }
+        );
 
-      // Write compiled artifact
-      const compiledPath = `${routinesPath}/${routine.name}.fftraj.json`;
-      await writeTextFile(compiledPath, JSON.stringify(compiled, null, 2));
-      console.log(`Saved compiled trajectory: ${routine.name}.fftraj.json`);
+        // Write compiled artifact
+        const compiledPath = `${routinesPath}/${routine.name}.fftraj.json`;
+        await writeTextFile(compiledPath, JSON.stringify(compiled, null, 2));
+        console.log(`Saved compiled trajectory: ${routine.name}.fftraj.json`);
 
-      // Update routine metadata with compilation info
-      set(state => ({
-        routines: state.routines.map(r =>
-          r.id === routine.id
-            ? {
-                ...r,
-                compiledVersion: compiled.formatVersion,
-                compiledAt: new Date(compiled.generatedAtUtc),
-                compiledFileName: `${routine.name}.fftraj.json`,
-              }
-            : r
-        )
-      }));
+        // Update routine metadata with compilation info
+        set(state => ({
+          routines: state.routines.map(r =>
+            r.id === routine.id
+              ? {
+                  ...r,
+                  compiledVersion: compiled.formatVersion,
+                  compiledAt: new Date(compiled.generatedAtUtc),
+                  compiledFileName: `${routine.name}.fftraj.json`,
+                }
+              : r
+          )
+        }));
+      }
     } catch (error) {
       console.error('Failed to save routine to file:', error);
       throw error; // Surface compile errors to user
